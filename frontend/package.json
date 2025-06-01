@@ -16,8 +16,7 @@
     "react-dom": "^18.2.0",
     "chart.js": "^4.4.1",
     "react-chartjs-2": "^5.2.0",
-    "react-icons": "^4.10.1",
-    "@chakra-ui/pagination": "^2.0.0"
+    "react-icons": "^4.10.1"
   },
   "devDependencies": {
     "typescript": "^5.2.2",
