@@ -42,7 +42,7 @@ import {
   Legend
 } from 'chart.js';
 
-import { TarifInput } from '../App';
+import { TarifInputUI as TarifInput } from './TarifSettings';   // type-only
 import {
   Cell,
   getFinance,
@@ -118,10 +118,10 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
         const maxRow = Math.max(...cells.map(c => c.row), 0);
         const r: Row[] = [];
         for (let i = 0; i <= maxRow; i++) {
-          r.push({ description: i === 0 ? 'Income' : Item ${i}, values: Array(12).fill(0) });
+          r.push({ description: i === 0 ? 'Income' : `Item ${i}`, values: Array(12).fill(0) });
         }
         cells.forEach(({ row, col, value }) => {
-          if (!r[row]) r[row] = { description: Item ${row}, values: Array(12).fill(0) };
+          if (!r[row]) r[row] = { description: `Item ${row}`, values: Array(12).fill(0) };
           r[row].values[col] = value;
         });
         setRows(r);
@@ -190,7 +190,10 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       setRows(prev => prev.filter((_, i) => i !== idx));
 
     const addRow = () =>
-      setRows(prev => [...prev, { description: Item ${prev.length}, values: Array(12).fill(0) }]);
+      setRows(prev => [
+        ...prev,
+        { description: `Item ${prev.length}`, values: Array(12).fill(0) }
+      ]);
 
     /* ── render ───────────────────────────────────────────────────── */
     return (

@@ -18,7 +18,7 @@ export interface Cell {
 /* ───────────────────────────────────────────────────────── */
 
 export async function getFinance(year: number): Promise<Cell[]> {
-  return fetch(/api/finance/${year}).then(r => r.json());
+  return fetch(`/api/finance/${year}`).then(r => r.json());
 }
 
 export async function saveCell(cell: Cell): Promise<void> {
@@ -33,7 +33,7 @@ export async function shiftRevision(
   year: number,
   dir: 'undo' | 'redo'
 ): Promise<number> {
-  return fetch(/api/finance/revision/${year}/${dir}, { method: 'POST' }).then(
+  return fetch(`/api/finance/revision/${year}/${dir}`, { method: 'POST' }).then(
     r => r.json()
   );
 }
@@ -43,11 +43,11 @@ export async function shiftRevision(
 /* ───────────────────────────────────────────────────────── */
 
 export async function loadSettings<T = any>(group: string): Promise<T> {
-  return fetch(/api/settings/${group}).then(r => r.json());
+  return fetch(`/api/settings/${group}`).then(r => r.json());
 }
 
 export async function saveSettings(group: string, data: any): Promise<void> {
-  await fetch(/api/settings/${group}, {
+  await fetch(`/api/settings/${group}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
