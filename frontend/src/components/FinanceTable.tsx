@@ -8,7 +8,7 @@ import {
   Stack,
   Table,
 } from '@chakra-ui/react';
-import { Pagination } from '@chakra-ui/pagination';
+// Simple pagination is implemented locally to avoid external dependencies
 import { useState } from 'react';
 import { LuChevronLeft, LuChevronRight } from 'react-icons/lu';
 
@@ -109,34 +109,34 @@ const FinanceTable = () => {
         </Table.Root>
       </Table.ScrollArea>
 
-      <Pagination.Root
-        count={items.length}
-        pageSize={PAGE_SIZE}
-        page={page}
-        onPageChange={setPage}
-      >
-        <ButtonGroup variant="ghost" size="sm" wrap="wrap">
-          <Pagination.PrevTrigger asChild>
-            <IconButton aria-label="Prev">
-              <LuChevronLeft />
-            </IconButton>
-          </Pagination.PrevTrigger>
+      <ButtonGroup variant="ghost" size="sm" wrap="wrap" justifyContent="center">
+        <IconButton
+          aria-label="Prev"
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          isDisabled={page === 1}
+        >
+          <LuChevronLeft />
+        </IconButton>
 
-          <Pagination.Items
-            render={(p) => (
-              <IconButton variant={{ base: 'ghost', _selected: 'outline' }}>
-                {p.value}
-              </IconButton>
-            )}
-          />
+        {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+          <IconButton
+            key={p}
+            aria-label={`Page ${p}`}
+            variant={p === page ? 'outline' : 'ghost'}
+            onClick={() => setPage(p)}
+          >
+            {p}
+          </IconButton>
+        ))}
 
-          <Pagination.NextTrigger asChild>
-            <IconButton aria-label="Next">
-              <LuChevronRight />
-            </IconButton>
-          </Pagination.NextTrigger>
-        </ButtonGroup>
-      </Pagination.Root>
+        <IconButton
+          aria-label="Next"
+          onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+          isDisabled={page === pageCount}
+        >
+          <LuChevronRight />
+        </IconButton>
+      </ButtonGroup>
 
       <ActionBar.Root open={hasSelection}>
         <Portal>
