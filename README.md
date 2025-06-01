@@ -18,5 +18,6 @@ Run tests locally with:
 
 ```bash
 pip install -r backend/requirements.txt
+
 python -m pytest backend/tests
 ```
