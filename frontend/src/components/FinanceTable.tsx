@@ -510,9 +510,23 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
                     })
                   }).then(r => r.json());
                   const net = payroll.net;
-                  for (let m = 0; m < 12; m++) {
-                    upsert(0, m, net);
-                  }
+
+                  // shift revision **once** and update all months in one go
+                  const rev = await shiftRevision(year, 'redo');
+                  setRows(prev => {
+                    const clone = [...prev];
+                    if (clone[0]) clone[0].values = Array(12).fill(net);
+                    return clone;
+                  });
+                  for (let m = 0; m < 12; m++)
+                    await saveCell({
+                      year,
+                      row: 0,
+                      col: m,
+                      value: net,
+                      revision: rev
+                    });
+                  setRevision(rev);
                   incomeDlg.onClose();
                 }}
               >
