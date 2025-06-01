@@ -4,11 +4,11 @@ import {
   Checkbox,
   IconButton,
   Kbd,
-  Pagination,
   Portal,
   Stack,
   Table,
 } from '@chakra-ui/react';
+import { Pagination } from '@chakra-ui/pagination';
 import { useState } from 'react';
 import { LuChevronLeft, LuChevronRight } from 'react-icons/lu';
 

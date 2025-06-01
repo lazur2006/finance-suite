@@ -6,7 +6,7 @@ import {
   useColorMode,
 } from '@chakra-ui/react';
 import React, { useState } from 'react';
-import { FaCog, FaMoneyBill } from 'react-icons/fa';
+import { FaCog, FaMoneyBill, FaSun } from 'react-icons/fa';
 import PayrollSettings from './components/PayrollSettings';
 import TarifSettings from './components/TarifSettings';
 import FinanceTable from './components/FinanceTable';
@@ -58,7 +58,7 @@ const App = () => {
           aria-label="Toggle theme"
           size="sm"
           onClick={toggleColorMode}
-          icon={<FaCog />}
+          icon={<FaSun />}
         />
       </Box>
       <Box px={4} py={4} width="full">
