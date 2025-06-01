@@ -98,46 +98,6 @@ const FinanceTable = ({ entgeltgruppe, stufe }: FinanceTableProps) => {
     ],
   };
 
-  const headers = months.map(m => <Th key={m}>{m} {year}</Th>);
-
-  const populateIncome = async () => {
-    const tarifRes = await fetch('/api/tarif/estimate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entgeltgruppe, stufe }),
-    });
-    const tarifData = await tarifRes.json();
-    const gross = tarifData.monatsgesamt;
-    const payRes = await fetch('/api/payroll/gross-to-net', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gross }),
-    });
-    const payData = await payRes.json();
-    const newRows = [...rows];
-    newRows[0].values = Array(12).fill(payData.net);
-    setRows(newRows);
-  };
-
-  const monthlyLeftover: number[] = [];
-  for (let i = 0; i < 12; i++) {
-    const income = rows[0].values[i] || 0;
-    const outcome = rows.slice(1).reduce((s, r) => s + (r.values[i] || 0), 0);
-    const prev = i > 0 ? monthlyLeftover[i - 1] : 0;
-    monthlyLeftover[i] = prev + income - outcome;
-  }
-
-  const chartData = {
-    labels: months,
-    datasets: [
-      {
-        label: 'Leftover',
-        data: monthlyLeftover,
-        borderColor: 'rgb(56,132,255)',
-        backgroundColor: 'rgba(56,132,255,0.2)',
-      },
-    ],
-  };
 
   return (
     <Box overflowX="auto">
