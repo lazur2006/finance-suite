@@ -1,5 +1,33 @@
-import { Box, Button, Input, FormControl, FormLabel } from '@chakra-ui/react';
+import { Box, Button, FormControl, FormLabel, Select } from '@chakra-ui/react';
 import React, { useState } from 'react';
+
+const EG_OPTIONS = [
+  'EG 1',
+  'EG 2',
+  'EG 3',
+  'EG 4',
+  'EG 5',
+  'EG 6',
+  'EG 7',
+  'EG 8',
+  'EG 9',
+  'EG 10',
+  'EG 11',
+  'EG 12',
+  'EG 13',
+  'EG 14',
+];
+
+const STUFE_OPTIONS = [
+  'Grundentgelt',
+  'bis 12. Monat',
+  'nach 12. Monat',
+  'bis 18. Monat',
+  'nach 18. Monat',
+  'bis 36. Monat',
+  'nach 36. Monat',
+  'nach 24. Monat',
+];
 
 interface TarifResult {
   monatsgrund: number;
@@ -37,11 +65,19 @@ const TarifSettings = ({ entgeltgruppe, setEntgeltgruppe, stufe, setStufe }: Tar
     <Box>
       <FormControl mb={2}>
         <FormLabel>Entgeltgruppe</FormLabel>
-        <Input value={entgeltgruppe} onChange={e => setEntgeltgruppe(e.target.value)} />
+        <Select value={entgeltgruppe} onChange={e => setEntgeltgruppe(e.target.value)}>
+          {EG_OPTIONS.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </Select>
       </FormControl>
       <FormControl mb={2}>
         <FormLabel>Stufe</FormLabel>
-        <Input value={stufe} onChange={e => setStufe(e.target.value)} />
+        <Select value={stufe} onChange={e => setStufe(e.target.value)}>
+          {STUFE_OPTIONS.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </Select>
       </FormControl>
       <Button onClick={handleCalc}>Calculate</Button>
       {result && (

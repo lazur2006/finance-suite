@@ -1,43 +1,70 @@
-import { Box, Container, Heading, Tabs, TabList, TabPanels, Tab, TabPanel, useColorMode, Button } from '@chakra-ui/react';
+import {
+  Box,
+  Heading,
+  IconButton,
+  Tabs,
+  useColorMode,
+} from '@chakra-ui/react';
 import React, { useState } from 'react';
+import { FaCog, FaMoneyBill } from 'react-icons/fa';
 import PayrollSettings from './components/PayrollSettings';
 import TarifSettings from './components/TarifSettings';
 import FinanceTable from './components/FinanceTable';
 
 const App = () => {
   const { toggleColorMode } = useColorMode();
-  const [showSettings, setShowSettings] = useState(true);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   const [gross, setGross] = useState(4000);
   const [entgeltgruppe, setEntgeltgruppe] = useState('EG 1');
   const [stufe, setStufe] = useState('Grundentgelt');
 
   return (
-    <Container maxW="container.xl" py={4}>
-      <Box textAlign="right" mb={4}>
-        <Button size="sm" onClick={toggleColorMode}>Toggle Theme</Button>
+    <Box width="100vw" minH="100vh">
+      <Box
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        px={4}
+        py={2}
+        bg="bg.subtle"
+      >
+        <Heading size="md">Finance Suite</Heading>
+        <Tabs.Root
+          value={activeTab ?? undefined}
+          onValueChange={(v) => setActiveTab(v)}
+        >
+          <Tabs.List>
+            <Tabs.Trigger value="tarif">
+              <FaCog />
+            </Tabs.Trigger>
+            <Tabs.Trigger value="payroll">
+              <FaMoneyBill />
+            </Tabs.Trigger>
+            <Tabs.Indicator />
+          </Tabs.List>
+          <Tabs.Content value="tarif">
+            <TarifSettings
+              entgeltgruppe={entgeltgruppe}
+              setEntgeltgruppe={setEntgeltgruppe}
+              stufe={stufe}
+              setStufe={setStufe}
+            />
+          </Tabs.Content>
+          <Tabs.Content value="payroll">
+            <PayrollSettings gross={gross} setGross={setGross} />
+          </Tabs.Content>
+        </Tabs.Root>
+        <IconButton
+          aria-label="Toggle theme"
+          size="sm"
+          onClick={toggleColorMode}
+          icon={<FaCog />}
+        />
       </Box>
-      <Heading mb={4}>Finance Suite</Heading>
-      <Button size="sm" mb={2} onClick={() => setShowSettings(!showSettings)}>
-        {showSettings ? 'Hide Settings' : 'Show Settings'}
-      </Button>
-      {showSettings && (
-        <Tabs variant="enclosed" mb={4} isFitted>
-          <TabList>
-            <Tab>IGMetall ERA</Tab>
-            <Tab>Net Salary</Tab>
-          </TabList>
-          <TabPanels>
-            <TabPanel>
-              <TarifSettings entgeltgruppe={entgeltgruppe} setEntgeltgruppe={setEntgeltgruppe} stufe={stufe} setStufe={setStufe} />
-            </TabPanel>
-            <TabPanel>
-              <PayrollSettings gross={gross} setGross={setGross} />
-            </TabPanel>
-          </TabPanels>
-        </Tabs>
-      )}
-      <FinanceTable entgeltgruppe={entgeltgruppe} stufe={stufe} />
-    </Container>
+      <Box px={4} py={4} width="full">
+        <FinanceTable entgeltgruppe={entgeltgruppe} stufe={stufe} />
+      </Box>
+    </Box>
   );
 };
 
