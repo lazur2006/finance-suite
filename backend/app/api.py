@@ -1,5 +1,4 @@
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 
 from .database import SessionLocal
@@ -68,9 +67,7 @@ def finance_year(year: int, s: Session = Depends(db)):
 @router.post("/finance/cell", response_model=schemas.Cell)
 def save_cell(cell: schemas.Cell, s: Session = Depends(db)):
     """
-    Up-sert a single table cell.
-    All edits are stored inside the *current* revision that the client passes
-    back – the UI keeps track of the revision id it is working on.
+    Up-sert a single table cell inside the current revision.
     """
     query = select(models.FinanceCell).where(
         models.FinanceCell.year == cell.year,
@@ -107,9 +104,7 @@ def save_cell(cell: schemas.Cell, s: Session = Depends(db)):
 def shift_revision(year: int, direction: str, s: Session = Depends(db)):
     """
     Create a new revision snapshot and return its id.
-
-    * **undo**  → go one step back (min 0)
-    * **redo**  → go one step forward (max 10)
+    direction: 'undo' | 'redo'
     """
     if direction not in {"undo", "redo"}:
         raise HTTPException(400, "direction must be 'undo' or 'redo'")
@@ -158,6 +153,26 @@ def shift_revision(year: int, direction: str, s: Session = Depends(db)):
     return target
 
 
+# ───────────────────────── wipe a complete year ─────────────────────────────
+@router.delete("/finance/{year}/reset", status_code=204)
+def reset_year(year: int, tasks: BackgroundTasks, s: Session = Depends(db)):
+    """
+    Delete **all** FinanceCell rows for the given year (all revisions).
+    Runs asynchronously so the HTTP request returns immediately.
+    """
+    def _delete():
+        s.exec(
+            select(models.FinanceCell)
+            .where(models.FinanceCell.year == year)
+            .delete(synchronize_session=False)
+        )
+        s.commit()
+        log_action(s, "reset_year", {"year": year})
+
+    tasks.add_task(_delete)
+    return
+
+
 # ───────────────────────── user settings persistence ────────────────────────
 @router.get("/settings/{group}", response_model=schemas.Settings)
 def get_settings(group: str, s: Session = Depends(db)):
@@ -177,4 +192,3 @@ def save_settings(group: str, payload: dict, s: Session = Depends(db)):
     s.commit()
     log_action(s, "save_settings", {"group": group})
     return payload
-

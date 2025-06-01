@@ -1,4 +1,3 @@
-
 /**
  * Centralised fetch helpers used by the React components.
  * Keeps network code in one place and supplies TypeScript
@@ -54,3 +53,10 @@ export async function saveSettings(group: string, data: any): Promise<void> {
   });
 }
 
+/* ───────────────────────────────────────────────────────── */
+/*  Danger-zone: wipe a whole year                           */
+/* ───────────────────────────────────────────────────────── */
+
+export async function resetFinanceYear(year: number): Promise<void> {
+  await fetch(`/api/finance/${year}/reset`, { method: 'DELETE' });
+}

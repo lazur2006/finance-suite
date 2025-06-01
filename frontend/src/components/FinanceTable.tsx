@@ -1,4 +1,3 @@
-
 import React, {
   useEffect,
   useState,
@@ -30,7 +29,7 @@ import {
   useDisclosure
 } from '@chakra-ui/react';
 import { DeleteIcon, ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
-import { FiCopy, FiDollarSign } from 'react-icons/fi';
+import { FiCopy, FiDollarSign, FiTrash2 } from 'react-icons/fi';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -46,10 +45,10 @@ import {
 import TarifSettings, { TarifInputUI as TarifInput } from './TarifSettings';
 import PayrollSettings, { PayrollInputUI as PayrollInput } from './PayrollSettings';
 import {
-  Cell,
   getFinance,
   saveCell,
-  shiftRevision
+  shiftRevision,
+  resetFinanceYear
 } from '../api';
 
 ChartJS.register(
@@ -62,9 +61,7 @@ ChartJS.register(
   Legend
 );
 
-/* ──────────────────────────────────────────────────────────────────── */
-/*  Helper & types                                                     */
-/* ──────────────────────────────────────────────────────────────────── */
+/* ───────────────────────────────────────────────────────── */
 export interface FinanceTableHandle {
   undo(): void;
   redo(): void;
@@ -78,18 +75,30 @@ interface Props {
 }
 
 /* Months */
-const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',
-  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
 interface Row {
   description: string;
   values: number[];
 }
 
-/* ──────────────────────────────────────────────────────────────────── */
+/* ───────────────────────────────────────────────────────── */
 const FinanceTable = forwardRef<FinanceTableHandle, Props>(
   ({ year, onYearChange, tarifInput, payrollInput }, ref) => {
-    /* ── persistent state ─────────────────────────────────────────── */
+    /* ── persistent state ──────────────────────────────── */
     const [rows, setRows] = useState<Row[]>([
       { description: 'Income', values: Array(12).fill(0) }
     ]);
@@ -97,7 +106,9 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
     const [showChart, setShowChart] = useState(false);
     const incomeDlg = useDisclosure();
     const [incomeTarif, setIncomeTarif] = useState<TarifInput>(tarifInput);
-    const [incomePayroll, setIncomePayroll] = useState<PayrollInput>(payrollInput);
+    const [incomePayroll, setIncomePayroll] = useState<PayrollInput>(
+      payrollInput
+    );
 
     useEffect(() => {
       if (incomeDlg.isOpen) {
@@ -106,7 +117,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       }
     }, [incomeDlg.isOpen, tarifInput, payrollInput]);
 
-    /* ── debounced save ───────────────────────────────────────────── */
+    /* ── debounced save ────────────────────────────────── */
     const timer = useRef<NodeJS.Timeout>();
 
     const upsert = (r: number, c: number, v: number) => {
@@ -124,9 +135,9 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       });
     };
 
-    /* ── load from DB every time year / revision changes ──────────── */
+    /* ── load latest snapshot each time year/revision changes ───── */
     useEffect(() => {
-      getFinance(year).then((cells) => {
+      getFinance(year).then(cells => {
         if (!cells.length) {
           setRows([{ description: 'Income', values: Array(12).fill(0) }]);
           setRevision(0);
@@ -135,10 +146,14 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
         const maxRow = Math.max(...cells.map(c => c.row), 0);
         const r: Row[] = [];
         for (let i = 0; i <= maxRow; i++) {
-          r.push({ description: i === 0 ? 'Income' : `Item ${i}`, values: Array(12).fill(0) });
+          r.push({
+            description: i === 0 ? 'Income' : `Item ${i}`,
+            values: Array(12).fill(0)
+          });
         }
         cells.forEach(({ row, col, value }) => {
-          if (!r[row]) r[row] = { description: `Item ${row}`, values: Array(12).fill(0) };
+          if (!r[row])
+            r[row] = { description: `Item ${row}`, values: Array(12).fill(0) };
           r[row].values[col] = value;
         });
         setRows(r);
@@ -146,7 +161,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       });
     }, [year, revision]);
 
-    /* ── carry-over from December of previous year ────────────────── */
+    /* ── carry-over from December of previous year ──────────────── */
     useEffect(() => {
       if (year <= 1970) return;
       getFinance(year - 1).then(prevCells => {
@@ -157,13 +172,17 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
           .reduce((s, c) => s + c.value, 0);
         const leftover = incomeDec - outDec;
         if (leftover !== 0) {
-          upsert(rows.length - 1, 0, rows[rows.length - 1].values[0] + leftover);
+          upsert(
+            rows.length - 1,
+            0,
+            rows[rows.length - 1].values[0] + leftover
+          );
         }
       });
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [year]);
 
-    /* ── undo / redo exposed to parent ────────────────────────────── */
+    /* ── undo / redo exposed to parent ───────────────────────────── */
     useImperativeHandle(ref, () => ({
       undo() {
         shiftRevision(year, 'undo').then(setRevision);
@@ -173,7 +192,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       }
     }));
 
-    /* ── monthly leftover for chart ───────────────────────────────── */
+    /* ── monthly leftover for chart ──────────────────────────────── */
     const monthlyLeft: number[] = [];
     for (let i = 0; i < 12; i++) {
       const income = rows[0]?.values[i] ?? 0;
@@ -195,14 +214,15 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       ]
     };
 
-    /* ── styles ───────────────────────────────────────────────────── */
+    /* ── styles ─────────────────────────────────────────────────── */
     const headerBg = useColorModeValue('gray.50', 'gray.800');
     const borderCol = useColorModeValue('gray.200', 'gray.600');
 
-    /* ── edit modal state ─────────────────────────────────────────── */
-    const [edit, setEdit] = useState<null | { row: number; col: number; val: number }>(null);
+    /* ── edit modal state ───────────────────────────────────────── */
+    const [edit, setEdit] =
+      useState<null | { row: number; col: number; val: number }>(null);
 
-    /* ── helpers ──────────────────────────────────────────────────── */
+    /* ── helpers ────────────────────────────────────────────────── */
     const deleteRow = (idx: number) =>
       setRows(prev => prev.filter((_, i) => i !== idx));
 
@@ -212,7 +232,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
         { description: `Item ${prev.length}`, values: Array(12).fill(0) }
       ]);
 
-    /* ── render ───────────────────────────────────────────────────── */
+    /* ── render ─────────────────────────────────────────────────── */
     return (
       <Box w="full" h="full" overflow="auto">
         {/* controls */}
@@ -234,6 +254,28 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
             variant="outline"
             onClick={() => onYearChange(year + 1)}
           />
+
+          {/* NEW reset button */}
+          <IconButton
+            aria-label="Reset year"
+            icon={<FiTrash2 />}
+            size="sm"
+            variant="outline"
+            colorScheme="red"
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `Delete EVERY entry for ${year}? This cannot be undone.`
+                )
+              )
+                return;
+              resetFinanceYear(year).then(() => {
+                setRows([{ description: 'Income', values: Array(12).fill(0) }]);
+                setRevision(0);
+              });
+            }}
+          />
+
           <Button size="sm" onClick={addRow}>
             Add row
           </Button>
@@ -345,31 +387,48 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
         </Box>
 
         {/* income settings modal */}
-        <Modal isOpen={incomeDlg.isOpen} onClose={incomeDlg.onClose} size="xl" scrollBehavior="inside">
+        <Modal
+          isOpen={incomeDlg.isOpen}
+          onClose={incomeDlg.onClose}
+          size="xl"
+          scrollBehavior="inside"
+        >
           <ModalOverlay />
           <ModalContent maxH="80vh" overflow="hidden">
             <ModalHeader>Income Settings</ModalHeader>
             <ModalCloseButton />
             <ModalBody overflow="auto" pb={4}>
               <TarifSettings value={incomeTarif} onChange={setIncomeTarif} />
-              <PayrollSettings value={incomePayroll} onChange={setIncomePayroll} />
-              <Button mt={4} colorScheme="blue" onClick={async () => {
-                const tarif = await fetch('/api/tarif/estimate', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(incomeTarif)
-                }).then(r => r.json());
-                const payroll = await fetch('/api/payroll/gross-to-net', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ ...incomePayroll, gross: tarif.monatsgesamt })
-                }).then(r => r.json());
-                const net = payroll.net;
-                for (let m = 0; m < 12; m++) {
-                  upsert(0, m, net);
-                }
-                incomeDlg.onClose();
-              }}>Apply</Button>
+              <PayrollSettings
+                value={incomePayroll}
+                onChange={setIncomePayroll}
+              />
+              <Button
+                mt={4}
+                colorScheme="blue"
+                onClick={async () => {
+                  const tarif = await fetch('/api/tarif/estimate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(incomeTarif)
+                  }).then(r => r.json());
+                  const payroll = await fetch('/api/payroll/gross-to-net', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      ...incomePayroll,
+                      gross: tarif.monatsgesamt
+                    })
+                  }).then(r => r.json());
+                  const net = payroll.net;
+                  for (let m = 0; m < 12; m++) {
+                    upsert(0, m, net);
+                  }
+                  incomeDlg.onClose();
+                }}
+              >
+                Apply
+              </Button>
             </ModalBody>
           </ModalContent>
         </Modal>
@@ -385,7 +444,9 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
                 <HStack>
                   <NumberInput
                     value={edit.val}
-                    onChange={(_, n) => setEdit(e => (e ? { ...e, val: n } : e))}
+                    onChange={(_, n) =>
+                      setEdit(e => (e ? { ...e, val: n } : e))
+                    }
                     precision={2}
                     step={10}
                   >
@@ -435,4 +496,3 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
 );
 
 export default FinanceTable;
-
