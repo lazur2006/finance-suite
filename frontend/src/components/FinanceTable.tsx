@@ -28,7 +28,11 @@ import {
   useColorModeValue,
   useDisclosure
 } from '@chakra-ui/react';
-import { DeleteIcon, ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
+import {
+  DeleteIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon
+} from '@chakra-ui/icons';
 import { FiCopy, FiDollarSign, FiTrash2 } from 'react-icons/fi';
 import { Line } from 'react-chartjs-2';
 import {
@@ -42,9 +46,15 @@ import {
   Legend
 } from 'chart.js';
 
-import TarifSettings, { TarifInputUI as TarifInput } from './TarifSettings';
-import PayrollSettings, { PayrollInputUI as PayrollInput } from './PayrollSettings';
+import TarifSettings, {
+  TarifInputUI as TarifInput
+} from './TarifSettings';
+import PayrollSettings, {
+  PayrollInputUI as PayrollInput
+} from './PayrollSettings';
+
 import {
+  Cell,
   getFinance,
   saveCell,
   shiftRevision,
@@ -105,11 +115,12 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
     const [revision, setRevision] = useState(0);
     const [showChart, setShowChart] = useState(false);
     const incomeDlg = useDisclosure();
-    const [incomeTarif, setIncomeTarif] = useState<TarifInput>(tarifInput);
-    const [incomePayroll, setIncomePayroll] = useState<PayrollInput>(
-      payrollInput
-    );
+    const [incomeTarif, setIncomeTarif] =
+      useState<TarifInput>(tarifInput);
+    const [incomePayroll, setIncomePayroll] =
+      useState<PayrollInput>(payrollInput);
 
+    /* keep modal state in sync with global defaults */
     useEffect(() => {
       if (incomeDlg.isOpen) {
         setIncomeTarif(tarifInput);
@@ -120,27 +131,33 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
     /* ── debounced save ────────────────────────────────── */
     const timer = useRef<NodeJS.Timeout>();
 
+    /**
+     * Save the cell **first**, then switch to the new revision.
+     * This avoids the race-condition where the table refreshes
+     * before the change has hit the database.
+     */
     const upsert = (r: number, c: number, v: number) => {
       shiftRevision(year, 'redo').then(newRev => {
-        setRevision(newRev);
+        clearTimeout(timer.current);
+
         setRows(prev => {
           const clone = [...prev];
           clone[r].values[c] = v;
           return clone;
         });
-        clearTimeout(timer.current);
-        timer.current = setTimeout(() => {
-          saveCell({ year, row: r, col: c, value: v, revision: newRev });
-        }, 250);
+
+        timer.current = setTimeout(async () => {
+          await saveCell({ year, row: r, col: c, value: v, revision: newRev });
+          setRevision(newRev); // trigger reload **after** the cell is stored
+        }, 200);
       });
     };
 
-    /* ── load latest snapshot each time year/revision changes ───── */
+    /* ── load latest snapshot whenever year/revision changes ───── */
     useEffect(() => {
       getFinance(year).then(cells => {
         if (!cells.length) {
           setRows([{ description: 'Income', values: Array(12).fill(0) }]);
-          setRevision(0);
           return;
         }
         const maxRow = Math.max(...cells.map(c => c.row), 0);
@@ -153,7 +170,10 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
         }
         cells.forEach(({ row, col, value }) => {
           if (!r[row])
-            r[row] = { description: `Item ${row}`, values: Array(12).fill(0) };
+            r[row] = {
+              description: `Item ${row}`,
+              values: Array(12).fill(0)
+            };
           r[row].values[col] = value;
         });
         setRows(r);
@@ -161,7 +181,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       });
     }, [year, revision]);
 
-    /* ── carry-over from December of previous year ──────────────── */
+    /* ── carry-over from December of previous year ─────────────── */
     useEffect(() => {
       if (year <= 1970) return;
       getFinance(year - 1).then(prevCells => {
@@ -220,7 +240,9 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
 
     /* ── edit modal state ───────────────────────────────────────── */
     const [edit, setEdit] =
-      useState<null | { row: number; col: number; val: number }>(null);
+      useState<null | { row: number; col: number; val: number }>(
+        null
+      );
 
     /* ── helpers ────────────────────────────────────────────────── */
     const deleteRow = (idx: number) =>
@@ -255,7 +277,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
             onClick={() => onYearChange(year + 1)}
           />
 
-          {/* NEW reset button */}
+          {/* reset button */}
           <IconButton
             aria-label="Reset year"
             icon={<FiTrash2 />}
@@ -270,7 +292,9 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
               )
                 return;
               resetFinanceYear(year).then(() => {
-                setRows([{ description: 'Income', values: Array(12).fill(0) }]);
+                setRows([
+                  { description: 'Income', values: Array(12).fill(0) }
+                ]);
                 setRevision(0);
               });
             }}
@@ -353,7 +377,9 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
                       key={cIdx}
                       textAlign="right"
                       cursor="pointer"
-                      onClick={() => setEdit({ row: rIdx, col: cIdx, val: v })}
+                      onClick={() =>
+                        setEdit({ row: rIdx, col: cIdx, val: v })
+                      }
                       _hover={{ bg: 'blue.50' }}
                     >
                       {v.toFixed(2)}
@@ -386,6 +412,66 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
           </Table>
         </Box>
 
+        {/* cell edit modal */}
+        <Modal isOpen={!!edit} onClose={() => setEdit(null)} isCentered>
+          <ModalOverlay />
+          {edit && (
+            <ModalContent>
+              <ModalHeader>Edit value</ModalHeader>
+              <ModalCloseButton />
+              <ModalBody>
+                <HStack>
+                  <NumberInput
+                    value={edit.val}
+                    onChange={(_, n) =>
+                      setEdit(e => (e ? { ...e, val: n } : e))
+                    }
+                    precision={2}
+                    step={10}
+                  >
+                    <NumberInputField autoFocus />
+                  </NumberInput>
+                  <IconButton
+                    aria-label="Copy to row"
+                    icon={<FiCopy />}
+                    title="Fill entire row"
+                    onClick={() => {
+                      shiftRevision(year, 'redo').then(newRev => {
+                        setRows(prev => {
+                          const clone = [...prev];
+                          clone[edit.row].values = Array(12).fill(
+                            edit.val
+                          );
+                          return clone;
+                        });
+                        for (let m = 0; m < 12; m++)
+                          saveCell({
+                            year,
+                            row: edit.row,
+                            col: m,
+                            value: edit.val,
+                            revision: newRev
+                          });
+                        setRevision(newRev);
+                        setEdit(null);
+                      });
+                    }}
+                  />
+                  <Button
+                    ml="auto"
+                    onClick={() => {
+                      upsert(edit.row, edit.col, edit.val);
+                      setEdit(null);
+                    }}
+                  >
+                    OK
+                  </Button>
+                </HStack>
+              </ModalBody>
+            </ModalContent>
+          )}
+        </Modal>
+
         {/* income settings modal */}
         <Modal
           isOpen={incomeDlg.isOpen}
@@ -398,7 +484,10 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
             <ModalHeader>Income Settings</ModalHeader>
             <ModalCloseButton />
             <ModalBody overflow="auto" pb={4}>
-              <TarifSettings value={incomeTarif} onChange={setIncomeTarif} />
+              <TarifSettings
+                value={incomeTarif}
+                onChange={setIncomeTarif}
+              />
               <PayrollSettings
                 value={incomePayroll}
                 onChange={setIncomePayroll}
@@ -431,64 +520,6 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
               </Button>
             </ModalBody>
           </ModalContent>
-        </Modal>
-
-        {/* cell edit modal */}
-        <Modal isOpen={!!edit} onClose={() => setEdit(null)} isCentered>
-          <ModalOverlay />
-          {edit && (
-            <ModalContent>
-              <ModalHeader>Edit value</ModalHeader>
-              <ModalCloseButton />
-              <ModalBody>
-                <HStack>
-                  <NumberInput
-                    value={edit.val}
-                    onChange={(_, n) =>
-                      setEdit(e => (e ? { ...e, val: n } : e))
-                    }
-                    precision={2}
-                    step={10}
-                  >
-                    <NumberInputField autoFocus />
-                  </NumberInput>
-                  <IconButton
-                    aria-label="Copy to row"
-                    icon={<FiCopy />}
-                    title="Fill entire row"
-                    onClick={() => {
-                      shiftRevision(year, 'redo').then(newRev => {
-                        setRevision(newRev);
-                        setRows(prev => {
-                          const clone = [...prev];
-                          clone[edit.row].values = Array(12).fill(edit.val);
-                          return clone;
-                        });
-                        for (let m = 0; m < 12; m++)
-                          saveCell({
-                            year,
-                            row: edit.row,
-                            col: m,
-                            value: edit.val,
-                            revision: newRev
-                          });
-                        setEdit(null);
-                      });
-                    }}
-                  />
-                  <Button
-                    ml="auto"
-                    onClick={() => {
-                      upsert(edit.row, edit.col, edit.val);
-                      setEdit(null);
-                    }}
-                  >
-                    OK
-                  </Button>
-                </HStack>
-              </ModalBody>
-            </ModalContent>
-          )}
         </Modal>
       </Box>
     );

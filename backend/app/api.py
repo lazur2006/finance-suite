@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from sqlalchemy import delete                        # NEW
 from sqlmodel import Session, select
 
 from .database import SessionLocal
@@ -15,6 +16,7 @@ def db():
 
 
 def log_action(session: Session, action: str, info: dict) -> None:
+    """Light-weight audit trail for every API operation."""
     session.add(models.ActionLog(action=action, info=info))
     session.commit()
 
@@ -104,7 +106,7 @@ def save_cell(cell: schemas.Cell, s: Session = Depends(db)):
 def shift_revision(year: int, direction: str, s: Session = Depends(db)):
     """
     Create a new revision snapshot and return its id.
-    direction: 'undo' | 'redo'
+    direction: **undo** | **redo**
     """
     if direction not in {"undo", "redo"}:
         raise HTTPException(400, "direction must be 'undo' or 'redo'")
@@ -123,7 +125,7 @@ def shift_revision(year: int, direction: str, s: Session = Depends(db)):
     if target == latest:
         return latest  # nothing to do
 
-    # if the target revision already exists we just return it
+    # if the target revision already exists just return it
     exists = s.exec(
         select(models.FinanceCell.id).where(
             models.FinanceCell.year == year, models.FinanceCell.revision == target
@@ -149,7 +151,9 @@ def shift_revision(year: int, direction: str, s: Session = Depends(db)):
             )
         )
     s.commit()
-    log_action(s, "shift_revision", {"year": year, "direction": direction, "revision": target})
+    log_action(
+        s, "shift_revision", {"year": year, "direction": direction, "revision": target}
+    )
     return target
 
 
@@ -157,15 +161,12 @@ def shift_revision(year: int, direction: str, s: Session = Depends(db)):
 @router.delete("/finance/{year}/reset", status_code=204)
 def reset_year(year: int, tasks: BackgroundTasks, s: Session = Depends(db)):
     """
-    Delete **all** FinanceCell rows for the given year (all revisions).
+    Delete **all** FinanceCell rows for the given year (across *all* revisions).
     Runs asynchronously so the HTTP request returns immediately.
     """
+
     def _delete():
-        s.exec(
-            select(models.FinanceCell)
-            .where(models.FinanceCell.year == year)
-            .delete(synchronize_session=False)
-        )
+        s.execute(delete(models.FinanceCell).where(models.FinanceCell.year == year))
         s.commit()
         log_action(s, "reset_year", {"year": year})
 

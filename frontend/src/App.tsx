@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import {
   Box,
@@ -21,12 +20,7 @@ import {
   VStack
 } from '@chakra-ui/react';
 import { SunIcon, MoonIcon } from '@chakra-ui/icons';
-import {
-  FiInfo,
-  FiSettings,
-  FiRotateCcw,
-  FiRotateCw
-} from 'react-icons/fi';
+import { FiInfo, FiSettings, FiRotateCcw, FiRotateCw } from 'react-icons/fi';
 
 import PayrollSettings, {
   PayrollInputUI,
@@ -36,12 +30,12 @@ import TarifSettings, {
   defaultTarifInput,
   TarifInputUI
 } from './components/TarifSettings';
-import FinanceTable, { FinanceTableHandle } from './components/FinanceTable';
+import FinanceTable, {
+  FinanceTableHandle
+} from './components/FinanceTable';
 import { loadSettings, saveSettings } from './api';
 
-/* ──────────────────────────────────────────────────────────────────── */
-/*  App-level state                                                    */
-/* ──────────────────────────────────────────────────────────────────── */
+/* ───────────────────────────────────────────────────────── */
 const App: React.FC = () => {
   const { colorMode, toggleColorMode } = useColorMode();
   const settingsDlg = useDisclosure();
@@ -55,17 +49,18 @@ const App: React.FC = () => {
     defaultPayrollInput
   );
 
-  /* Load persisted defaults once */
+  /* load persisted defaults once */
   useEffect(() => {
-    loadSettings<TarifInputUI>('tarif').then((s) =>
+    loadSettings<TarifInputUI>('tarif').then(s =>
       setTarifInput({ ...defaultTarifInput, ...s })
     );
-    loadSettings<PayrollInputUI>('payroll').then((s) =>
+    loadSettings<PayrollInputUI>('payroll').then(s =>
       setPayrollInput({ ...defaultPayrollInput, ...s })
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* Persist on every change */
+  /* persist every change */
   useEffect(() => {
     saveSettings('tarif', tarifInput);
   }, [tarifInput]);
@@ -73,7 +68,7 @@ const App: React.FC = () => {
     saveSettings('payroll', payrollInput);
   }, [payrollInput]);
 
-  /* Expose undo/redo coming from FinanceTable */
+  /* expose undo/redo coming from FinanceTable */
   const tableRef = React.useRef<FinanceTableHandle>(null);
 
   return (
@@ -191,4 +186,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
