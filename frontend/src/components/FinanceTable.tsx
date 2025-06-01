@@ -1,5 +1,5 @@
 import { Box, Table, Thead, Tbody, Tr, Th, Td, Button, Input } from '@chakra-ui/react';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -13,6 +13,25 @@ import {
 } from 'chart.js';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+
+const AutoInput = ({ value, onChange }: { value: number | string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => {
+  const [width, setWidth] = useState('2ch');
+  useEffect(() => {
+    const len = String(value ?? '').length;
+    setWidth(`${Math.max(len + 1, 2)}ch`);
+  }, [value]);
+  return (
+    <Input
+      type="number"
+      size="sm"
+      textAlign="right"
+      value={value}
+      onChange={onChange}
+      width={width}
+      variant="flushed"
+    />
+  );
+};
 
 interface Row {
   description: string;
@@ -32,7 +51,51 @@ const FinanceTable = ({ entgeltgruppe, stufe }: FinanceTableProps) => {
   const [showChart, setShowChart] = useState(false);
 
   const addRow = () => {
-    setRows([...rows, { description: 'Item', values: Array(12).fill(0) }]);
+    setRows([...rows, { description: `Item ${rows.length}`, values: Array(12).fill(0) }]);
+  };
+
+  const headers = months.map(m => <Th key={m}>{m} {year}</Th>);
+
+  const populateIncome = async () => {
+    const tarifRes = await fetch('/api/tarif/breakdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entgeltgruppe, stufe }),
+    });
+    const monthsData = await tarifRes.json();
+    const nets: number[] = [];
+    for (const m of monthsData) {
+      const payRes = await fetch('/api/payroll/gross-to-net', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gross: m.Brutto }),
+      });
+      const payData = await payRes.json();
+      nets.push(payData.net);
+    }
+    const newRows = [...rows];
+    newRows[0].values = nets;
+    setRows(newRows);
+  };
+
+  const monthlyLeftover: number[] = [];
+  for (let i = 0; i < 12; i++) {
+    const income = rows[0].values[i] || 0;
+    const outcome = rows.slice(1).reduce((s, r) => s + (r.values[i] || 0), 0);
+    const prev = i > 0 ? monthlyLeftover[i - 1] : 0;
+    monthlyLeftover[i] = prev + income - outcome;
+  }
+
+  const chartData = {
+    labels: months,
+    datasets: [
+      {
+        label: 'Leftover',
+        data: monthlyLeftover,
+        borderColor: 'rgb(56,132,255)',
+        backgroundColor: 'rgba(56,132,255,0.2)',
+      },
+    ],
   };
 
   const headers = months.map(m => <Th key={m}>{m} {year}</Th>);
@@ -99,12 +162,22 @@ const FinanceTable = ({ entgeltgruppe, stufe }: FinanceTableProps) => {
         <Tbody>
           {rows.map((row, rIdx) => (
             <Tr key={rIdx}>
-              <Td>{row.description}</Td>
+              <Td>
+                <Input
+                  variant="flushed"
+                  size="sm"
+                  width="100%"
+                  value={row.description}
+                  onChange={e => {
+                    const newRows = [...rows];
+                    newRows[rIdx].description = e.target.value;
+                    setRows(newRows);
+                  }}
+                />
+              </Td>
               {row.values.map((v, idx) => (
                 <Td key={idx}>
-                  <Input
-                    type="number"
-                    size="sm"
+                  <AutoInput
                     value={v}
                     onChange={e => {
                       const newRows = [...rows];
@@ -119,7 +192,7 @@ const FinanceTable = ({ entgeltgruppe, stufe }: FinanceTableProps) => {
           <Tr>
             <Td fontWeight="bold">Leftover</Td>
             {monthlyLeftover.map((v, idx) => (
-              <Td key={idx}>{v.toFixed(2)}</Td>
+              <Td key={idx} textAlign="right">{v.toFixed(2)}</Td>
             ))}
           </Tr>
         </Tbody>
