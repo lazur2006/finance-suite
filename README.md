@@ -12,12 +12,12 @@ Start the stack for development:
 docker compose up --build
 ```
 
-The backend will be available at `http://localhost:8000`, the frontend at `http://localhost:8877` via Traefik.
+Traefik will be available on `http://localhost:8877` and the backend runs on
+port `8878`. The frontend is served through Traefik.
 
 Run tests locally with:
 
 ```bash
 pip install -r backend/requirements.txt
-
-python -m pytest backend/tests
+python -m pytest backend/tests -q
 ```
