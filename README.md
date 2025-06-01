@@ -12,6 +12,7 @@ Start the stack for development:
 docker compose up --build
 ```
 
+
 The backend will be available at `http://localhost:8878`, the frontend at `http://localhost:8877` via Traefik.
 
 Run tests locally with:
