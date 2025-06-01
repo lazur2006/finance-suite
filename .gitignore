@@ -4,3 +4,4 @@ __pycache__/
 node_modules/
 dist/
 dump_structure.sh
+folder_dump_*.txt
