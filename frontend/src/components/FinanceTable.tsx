@@ -1,163 +1,159 @@
-import { Box, Table, Thead, Tbody, Tr, Th, Td, Button, Input } from '@chakra-ui/react';
-import React, { useState, useEffect } from 'react';
-import { Line } from 'react-chartjs-2';
 import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
+  ActionBar,
+  Button,
+  Checkbox,
+  IconButton,
+  Kbd,
+  Portal,
+  Stack,
+  Table,
+} from '@chakra-ui/react';
+import { Pagination } from '@chakra-ui/pagination';
+import { useState } from 'react';
+import { LuChevronLeft, LuChevronRight } from 'react-icons/lu';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
-
-const AutoInput = ({ value, onChange }: { value: number | string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => {
-  const [width, setWidth] = useState('2ch');
-  useEffect(() => {
-    const len = String(value ?? '').length;
-    setWidth(`${Math.max(len + 1, 2)}ch`);
-  }, [value]);
-  return (
-    <Input
-      type="number"
-      size="sm"
-      textAlign="right"
-      value={value}
-      onChange={onChange}
-      width={width}
-      variant="flushed"
-    />
-  );
-};
-
-interface Row {
-  description: string;
-  values: number[];
+interface Item {
+  id: number;
+  name: string;
+  category: string;
+  price: number;
 }
 
-const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const initialItems: Item[] = [
+  { id: 1, name: 'Laptop', category: 'Electronics', price: 999.99 },
+  { id: 2, name: 'Coffee Maker', category: 'Home Appliances', price: 49.99 },
+  { id: 3, name: 'Desk Chair', category: 'Furniture', price: 150.0 },
+  { id: 4, name: 'Smartphone', category: 'Electronics', price: 799.99 },
+  { id: 5, name: 'Headphones', category: 'Accessories', price: 199.99 },
+  { id: 6, name: 'Notebook', category: 'Office', price: 3.99 },
+  { id: 7, name: 'Pen', category: 'Office', price: 1.99 },
+  { id: 8, name: 'Monitor', category: 'Electronics', price: 249.99 },
+  { id: 9, name: 'Keyboard', category: 'Electronics', price: 89.99 },
+  { id: 10, name: 'Mouse', category: 'Electronics', price: 59.99 },
+];
 
-interface FinanceTableProps {
-  entgeltgruppe: string;
-  stufe: string;
-}
+const PAGE_SIZE = 5;
 
-const FinanceTable = ({ entgeltgruppe, stufe }: FinanceTableProps) => {
-  const [rows, setRows] = useState<Row[]>([{ description: 'Income', values: Array(12).fill(0) }]);
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [showChart, setShowChart] = useState(false);
+const FinanceTable = () => {
+  const [items, setItems] = useState<Item[]>(initialItems);
+  const [page, setPage] = useState(1);
+  const [selection, setSelection] = useState<number[]>([]);
 
-  const addRow = () => {
-    setRows([...rows, { description: `Item ${rows.length}`, values: Array(12).fill(0) }]);
+  const pageCount = Math.ceil(items.length / PAGE_SIZE);
+  const paginated = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const hasSelection = selection.length > 0;
+  const indeterminate =
+    hasSelection && selection.length < paginated.length;
+
+  const toggleRow = (id: number, checked: boolean) => {
+    setSelection((prev) =>
+      checked ? [...prev, id] : prev.filter((s) => s !== id)
+    );
   };
 
-  const headers = months.map(m => <Th key={m}>{m} {year}</Th>);
-
-  const populateIncome = async () => {
-    const tarifRes = await fetch('/api/tarif/breakdown', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entgeltgruppe, stufe }),
-    });
-    const monthsData = await tarifRes.json();
-    const nets: number[] = [];
-    for (const m of monthsData) {
-      const payRes = await fetch('/api/payroll/gross-to-net', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gross: m.Brutto }),
-      });
-      const payData = await payRes.json();
-      nets.push(payData.net);
-    }
-    const newRows = [...rows];
-    newRows[0].values = nets;
-    setRows(newRows);
+  const toggleAll = (checked: boolean) => {
+    setSelection(checked ? paginated.map((i) => i.id) : []);
   };
 
-  const monthlyLeftover: number[] = [];
-  for (let i = 0; i < 12; i++) {
-    const income = rows[0].values[i] || 0;
-    const outcome = rows.slice(1).reduce((s, r) => s + (r.values[i] || 0), 0);
-    const prev = i > 0 ? monthlyLeftover[i - 1] : 0;
-    monthlyLeftover[i] = prev + income - outcome;
-  }
-
-  const chartData = {
-    labels: months,
-    datasets: [
-      {
-        label: 'Leftover',
-        data: monthlyLeftover,
-        borderColor: 'rgb(56,132,255)',
-        backgroundColor: 'rgba(56,132,255,0.2)',
-      },
-    ],
+  const deleteRows = () => {
+    setItems((prev) => prev.filter((i) => !selection.includes(i.id)));
+    setSelection([]);
   };
-
 
   return (
-    <Box overflowX="auto">
-      <Box mb={2} display="flex" gap={2} alignItems="center">
-        <Input width="100px" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
-        <Button onClick={populateIncome}>Populate Income</Button>
-        <Button onClick={addRow}>Add row</Button>
-        <Button onClick={() => setShowChart(!showChart)}>{showChart ? 'Hide Chart' : 'Show Chart'}</Button>
-      </Box>
-      {showChart && (
-        <Box mb={4}>
-          <Line data={chartData} />
-        </Box>
-      )}
-      <Table size="sm" variant="striped">
-        <Thead>
-          <Tr>
-            <Th>Description</Th>
-            {headers}
-          </Tr>
-        </Thead>
-        <Tbody>
-          {rows.map((row, rIdx) => (
-            <Tr key={rIdx}>
-              <Td>
-                <Input
-                  variant="flushed"
+    <Stack width="full" gap={4} p={2}>
+      <Table.ScrollArea borderWidth="1px" rounded="md" height="240px">
+        <Table.Root size="sm" stickyHeader showColumnBorder>
+          <Table.Header>
+            <Table.Row bg="bg.subtle">
+              <Table.ColumnHeader w="6">
+                <Checkbox.Root
                   size="sm"
-                  width="100%"
-                  value={row.description}
-                  onChange={e => {
-                    const newRows = [...rows];
-                    newRows[rIdx].description = e.target.value;
-                    setRows(newRows);
-                  }}
-                />
-              </Td>
-              {row.values.map((v, idx) => (
-                <Td key={idx}>
-                  <AutoInput
-                    value={v}
-                    onChange={e => {
-                      const newRows = [...rows];
-                      newRows[rIdx].values[idx] = Number(e.target.value);
-                      setRows(newRows);
-                    }}
-                  />
-                </Td>
-              ))}
-            </Tr>
-          ))}
-          <Tr>
-            <Td fontWeight="bold">Leftover</Td>
-            {monthlyLeftover.map((v, idx) => (
-              <Td key={idx} textAlign="right">{v.toFixed(2)}</Td>
+                  aria-label="Select all rows"
+                  checked={indeterminate ? "indeterminate" : selection.length > 0}
+                  onCheckedChange={(c) => toggleAll(!!c.checked)}
+                >
+                  <Checkbox.HiddenInput />
+                  <Checkbox.Control />
+                </Checkbox.Root>
+              </Table.ColumnHeader>
+              <Table.ColumnHeader>Product</Table.ColumnHeader>
+              <Table.ColumnHeader>Category</Table.ColumnHeader>
+              <Table.ColumnHeader textAlign="end">Price</Table.ColumnHeader>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {paginated.map((item) => (
+              <Table.Row
+                key={item.id}
+                data-selected={selection.includes(item.id) ? '' : undefined}
+              >
+                <Table.Cell>
+                  <Checkbox.Root
+                    size="sm"
+                    aria-label="Select row"
+                    checked={selection.includes(item.id)}
+                    onCheckedChange={(c) => toggleRow(item.id, !!c.checked)}
+                  >
+                    <Checkbox.HiddenInput />
+                    <Checkbox.Control />
+                  </Checkbox.Root>
+                </Table.Cell>
+                <Table.Cell>{item.name}</Table.Cell>
+                <Table.Cell>{item.category}</Table.Cell>
+                <Table.Cell textAlign="end">{item.price}</Table.Cell>
+              </Table.Row>
             ))}
-          </Tr>
-        </Tbody>
-      </Table>
-    </Box>
+          </Table.Body>
+        </Table.Root>
+      </Table.ScrollArea>
+
+      <Pagination.Root
+        count={items.length}
+        pageSize={PAGE_SIZE}
+        page={page}
+        onPageChange={setPage}
+      >
+        <ButtonGroup variant="ghost" size="sm" wrap="wrap">
+          <Pagination.PrevTrigger asChild>
+            <IconButton aria-label="Prev">
+              <LuChevronLeft />
+            </IconButton>
+          </Pagination.PrevTrigger>
+
+          <Pagination.Items
+            render={(p) => (
+              <IconButton variant={{ base: 'ghost', _selected: 'outline' }}>
+                {p.value}
+              </IconButton>
+            )}
+          />
+
+          <Pagination.NextTrigger asChild>
+            <IconButton aria-label="Next">
+              <LuChevronRight />
+            </IconButton>
+          </Pagination.NextTrigger>
+        </ButtonGroup>
+      </Pagination.Root>
+
+      <ActionBar.Root open={hasSelection}>
+        <Portal>
+          <ActionBar.Positioner>
+            <ActionBar.Content>
+              <ActionBar.SelectionTrigger>
+                {selection.length} selected
+              </ActionBar.SelectionTrigger>
+              <ActionBar.Separator />
+              <Button variant="outline" size="sm" onClick={deleteRows}>
+                Delete <Kbd>⌫</Kbd>
+              </Button>
+            </ActionBar.Content>
+          </ActionBar.Positioner>
+        </Portal>
+      </ActionBar.Root>
+    </Stack>
   );
 };
 
