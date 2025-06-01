@@ -16,8 +16,12 @@ interface PayrollResult {
   unemployment_employer: number;
 }
 
-const PayrollSettings = () => {
-  const [gross, setGross] = useState(4000);
+interface PayrollSettingsProps {
+  gross: number;
+  setGross: (v: number) => void;
+}
+
+const PayrollSettings = ({ gross, setGross }: PayrollSettingsProps) => {
   const [result, setResult] = useState<PayrollResult | null>(null);
 
   const handleCalc = async () => {

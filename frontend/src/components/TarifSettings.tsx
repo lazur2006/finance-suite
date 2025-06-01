@@ -13,9 +13,14 @@ interface TarifResult {
   jahresentgelt: number;
 }
 
-const TarifSettings = () => {
-  const [entgeltgruppe, setEntgeltgruppe] = useState('EG 1');
-  const [stufe, setStufe] = useState('Grundentgelt');
+interface TarifSettingsProps {
+  entgeltgruppe: string;
+  setEntgeltgruppe: (v: string) => void;
+  stufe: string;
+  setStufe: (v: string) => void;
+}
+
+const TarifSettings = ({ entgeltgruppe, setEntgeltgruppe, stufe, setStufe }: TarifSettingsProps) => {
   const [result, setResult] = useState<TarifResult | null>(null);
 
   const handleCalc = async () => {
