@@ -17,6 +17,11 @@ services:
       - ./backend:/app
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/finance
+    ports:
+      - "8878:8878"
+    labels:
+      - "traefik.http.routers.backend.rule=PathPrefix(`/api`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=8878"
     depends_on:
       - db
 
@@ -30,9 +35,9 @@ services:
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
-      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.address=:8877"
     ports:
-      - "8877:80"
+      - "8877:8877"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:

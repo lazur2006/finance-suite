@@ -12,8 +12,7 @@ Start the stack for development:
 docker compose up --build
 ```
 
-Traefik will be available on `http://localhost:8877` and the backend runs on
-port `8878`. The frontend is served through Traefik.
+The API will be available at `http://localhost:8878` and the frontend via Traefik at `http://localhost:8877`.
 
 Run tests locally with:
 
