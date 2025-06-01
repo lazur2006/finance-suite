@@ -39,3 +39,14 @@ class Setting(SQLModel, table=True):
     data: Dict[str, Any] = Field(sa_column=Column(SA_JSON))
     ts: datetime = Field(default_factory=datetime.utcnow)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Action logs (chronological list of user actions)
+# ─────────────────────────────────────────────────────────────────────────────
+class ActionLog(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    action: str
+    info: Dict[str, Any] = Field(sa_column=Column(SA_JSON))
+    ts: datetime = Field(default_factory=datetime.utcnow)
+

@@ -15,20 +15,31 @@ def db():
         yield session
 
 
+def log_action(session: Session, action: str, info: dict) -> None:
+    session.add(models.ActionLog(action=action, info=info))
+    session.commit()
+
+
 # ───────────────────────── payroll / tarif ─────────────────────────
 @router.post("/payroll/gross-to-net", response_model=schemas.PayrollResult)
-def payroll_g2n(data: schemas.PayrollInput):
-    return gross_to_net(PayrollInputData(**data.dict())).asdict()
+def payroll_g2n(data: schemas.PayrollInput, s: Session = Depends(db)):
+    res = gross_to_net(PayrollInputData(**data.dict())).asdict()
+    log_action(s, "payroll_g2n", {"input": data.dict(), "result": res})
+    return res
 
 
 @router.post("/tarif/estimate", response_model=schemas.TarifResult)
-def tarif_estimate(data: schemas.TarifInput):
-    return berechne_nrw_2025(TarifInputData(**data.dict())).asdict()
+def tarif_estimate(data: schemas.TarifInput, s: Session = Depends(db)):
+    res = berechne_nrw_2025(TarifInputData(**data.dict())).asdict()
+    log_action(s, "tarif_estimate", {"input": data.dict(), "result": res})
+    return res
 
 
 @router.post("/tarif/breakdown", response_model=list[schemas.MonthlyBreakdown])
-def tarif_breakdown(data: schemas.TarifInput):
-    return get_monthly_breakdown(TarifInputData(**data.dict()))
+def tarif_breakdown(data: schemas.TarifInput, s: Session = Depends(db)):
+    res = get_monthly_breakdown(TarifInputData(**data.dict()))
+    log_action(s, "tarif_breakdown", {"input": data.dict()})
+    return res
 
 
 # ───────────────────────── finance-table persistence ────────────────────────
@@ -49,7 +60,9 @@ def finance_year(year: int, s: Session = Depends(db)):
     stmt = select(models.FinanceCell).where(
         models.FinanceCell.year == year, models.FinanceCell.revision == latest_rev
     )
-    return s.exec(stmt).all()
+    cells = s.exec(stmt).all()
+    log_action(s, "finance_year", {"year": year})
+    return cells
 
 
 @router.post("/finance/cell", response_model=schemas.Cell)
@@ -66,6 +79,7 @@ def save_cell(cell: schemas.Cell, s: Session = Depends(db)):
         models.FinanceCell.revision == cell.revision,
     )
     db_cell = s.exec(query).first()
+    old_val = db_cell.value if db_cell else None
     if db_cell:
         db_cell.value = cell.value
     else:
@@ -74,6 +88,18 @@ def save_cell(cell: schemas.Cell, s: Session = Depends(db)):
 
     s.commit()
     s.refresh(db_cell)
+    log_action(
+        s,
+        "save_cell",
+        {
+            "year": cell.year,
+            "row": cell.row,
+            "col": cell.col,
+            "old": old_val,
+            "new": cell.value,
+            "revision": cell.revision,
+        },
+    )
     return db_cell
 
 
@@ -128,6 +154,7 @@ def shift_revision(year: int, direction: str, s: Session = Depends(db)):
             )
         )
     s.commit()
+    log_action(s, "shift_revision", {"year": year, "direction": direction, "revision": target})
     return target
 
 
@@ -139,12 +166,15 @@ def get_settings(group: str, s: Session = Depends(db)):
         .where(models.Setting.group == group)
         .order_by(models.Setting.ts.desc())
     ).first()
-    return rec.data if rec else {}
+    data = rec.data if rec else {}
+    log_action(s, "get_settings", {"group": group})
+    return data
 
 
 @router.post("/settings/{group}", response_model=schemas.Settings)
 def save_settings(group: str, payload: dict, s: Session = Depends(db)):
     s.add(models.Setting(group=group, data=payload))
     s.commit()
+    log_action(s, "save_settings", {"group": group})
     return payload
 

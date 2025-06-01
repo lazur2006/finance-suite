@@ -183,6 +183,7 @@ const App: React.FC = () => {
           year={year}
           onYearChange={setYear}
           tarifInput={tarifInput}
+          payrollInput={payrollInput}
         />
       </VStack>
     </Box>
