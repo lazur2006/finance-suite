@@ -1,4 +1,4 @@
-import { Box, Table, Thead, Tbody, Tr, Th, Td, Button } from '@chakra-ui/react';
+import { Box, Table, Thead, Tbody, Tr, Th, Td, Button, Input } from '@chakra-ui/react';
 import React, { useState } from 'react';
 
 interface Row {
@@ -30,7 +30,18 @@ const FinanceTable = () => {
             <Tr key={rIdx}>
               <Td>{row.description}</Td>
               {row.values.map((v, idx) => (
-                <Td key={idx}>{v}</Td>
+                <Td key={idx}>
+                  <Input
+                    type="number"
+                    size="sm"
+                    value={v}
+                    onChange={e => {
+                      const newRows = [...rows];
+                      newRows[rIdx].values[idx] = Number(e.target.value);
+                      setRows(newRows);
+                    }}
+                  />
+                </Td>
               ))}
             </Tr>
           ))}
