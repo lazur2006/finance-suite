@@ -1,9 +1,22 @@
 import { Box, Button, Input, FormControl, FormLabel } from '@chakra-ui/react';
 import React, { useState } from 'react';
 
+interface TarifResult {
+  monatsgrund: number;
+  zulagen: number;
+  monatsgesamt: number;
+  tzug_b: number;
+  urlaubsgeld: number;
+  transformationsgeld: number;
+  tzug_a: number;
+  weihnachtsgeld: number;
+  jahresentgelt: number;
+}
+
 const TarifSettings = () => {
   const [entgeltgruppe, setEntgeltgruppe] = useState('EG 1');
   const [stufe, setStufe] = useState('Grundentgelt');
+  const [result, setResult] = useState<TarifResult | null>(null);
 
   const handleCalc = async () => {
     const res = await fetch('/api/tarif/estimate', {
@@ -11,8 +24,8 @@ const TarifSettings = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ entgeltgruppe, stufe })
     });
-    const data = await res.json();
-    console.log(data);
+    const data: TarifResult = await res.json();
+    setResult(data);
   };
 
   return (
@@ -26,6 +39,19 @@ const TarifSettings = () => {
         <Input value={stufe} onChange={e => setStufe(e.target.value)} />
       </FormControl>
       <Button onClick={handleCalc}>Calculate</Button>
+      {result && (
+        <Box mt={4}>
+          <div>Monatsgrund: {result.monatsgrund}</div>
+          <div>Zulagen: {result.zulagen}</div>
+          <div>Monatsgesamt: {result.monatsgesamt}</div>
+          <div>T-ZUG B: {result.tzug_b}</div>
+          <div>Urlaubsgeld: {result.urlaubsgeld}</div>
+          <div>Transformationsgeld: {result.transformationsgeld}</div>
+          <div>T-ZUG A: {result.tzug_a}</div>
+          <div>Weihnachtsgeld: {result.weihnachtsgeld}</div>
+          <div>Jahresentgelt: {result.jahresentgelt}</div>
+        </Box>
+      )}
     </Box>
   );
 };
