@@ -32,4 +32,4 @@ jobs:
           pip install -r backend/requirements.txt
       - name: Run tests
         run: |
-          python -m pytest backend/tests -q
+          python -m pytest backend/tests

@@ -9,14 +9,15 @@ Requirements: Docker and Docker Compose.
 Start the stack for development:
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-The backend will be available at `http://localhost:8000`, the frontend at `http://localhost` via Traefik.
+The backend will be available at `http://localhost:8000`, the frontend at `http://localhost:8877` via Traefik.
 
 Run tests locally with:
 
 ```bash
 pip install -r backend/requirements.txt
-pytest backend/tests
+
+python -m pytest backend/tests
 ```
