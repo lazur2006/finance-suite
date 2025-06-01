@@ -1,3 +1,4 @@
+
 """Payroll calculator for German net salary estimation (2025)."""
 from dataclasses import dataclass, asdict
 from typing import Dict, Tuple
@@ -126,3 +127,4 @@ def net_to_gross(target_net: float, **kwargs) -> Tuple[float, PayrollResultData]
         result = gross_to_net(PayrollInputData(gross=mid, **kwargs))
         hi, lo = (mid, lo) if result.net > target_net else (hi, mid)
     return round(hi, 2), result
+

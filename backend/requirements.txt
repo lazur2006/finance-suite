@@ -1,3 +1,4 @@
+
 fastapi
 uvicorn
 sqlmodel
@@ -6,3 +7,4 @@ passlib[bcrypt]
 jose
 psycopg2-binary
 pytest
+

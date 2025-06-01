@@ -1,3 +1,4 @@
+
 version: '3.9'
 
 services:
@@ -20,7 +21,7 @@ services:
     ports:
       - "8878:8878"
     labels:
-      - "traefik.http.routers.backend.rule=PathPrefix(`/api`)"
+      - "traefik.http.routers.backend.rule=PathPrefix(/api)"
       - "traefik.http.services.backend.loadbalancer.server.port=8878"
     depends_on:
       - db
@@ -30,7 +31,7 @@ services:
     depends_on:
       - backend
     labels:
-      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.rule=PathPrefix(/)"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
       - "traefik.http.routers.frontend.entrypoints=web"
 

@@ -1,160 +1,374 @@
-import {
-  ActionBar,
-  Button,
-  Checkbox,
-  IconButton,
-  Kbd,
-  Portal,
-  Stack,
-  Table,
-} from '@chakra-ui/react';
-// Simple pagination is implemented locally to avoid external dependencies
-import { useState } from 'react';
-import { LuChevronLeft, LuChevronRight } from 'react-icons/lu';
 
-interface Item {
-  id: number;
-  name: string;
-  category: string;
-  price: number;
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  forwardRef,
+  useImperativeHandle
+} from 'react';
+import {
+  Box,
+  Button,
+  HStack,
+  IconButton,
+  Input,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalCloseButton,
+  NumberInput,
+  NumberInputField,
+  Table,
+  Tbody,
+  Td,
+  Th,
+  Thead,
+  Tr,
+  useColorModeValue
+} from '@chakra-ui/react';
+import { DeleteIcon, ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
+import { FiCopy } from 'react-icons/fi';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
+
+import { TarifInput } from '../App';
+import {
+  Cell,
+  getFinance,
+  saveCell,
+  shiftRevision
+} from '../api';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
+/* ──────────────────────────────────────────────────────────────────── */
+/*  Helper & types                                                     */
+/* ──────────────────────────────────────────────────────────────────── */
+export interface FinanceTableHandle {
+  undo(): void;
+  redo(): void;
 }
 
-const initialItems: Item[] = [
-  { id: 1, name: 'Laptop', category: 'Electronics', price: 999.99 },
-  { id: 2, name: 'Coffee Maker', category: 'Home Appliances', price: 49.99 },
-  { id: 3, name: 'Desk Chair', category: 'Furniture', price: 150.0 },
-  { id: 4, name: 'Smartphone', category: 'Electronics', price: 799.99 },
-  { id: 5, name: 'Headphones', category: 'Accessories', price: 199.99 },
-  { id: 6, name: 'Notebook', category: 'Office', price: 3.99 },
-  { id: 7, name: 'Pen', category: 'Office', price: 1.99 },
-  { id: 8, name: 'Monitor', category: 'Electronics', price: 249.99 },
-  { id: 9, name: 'Keyboard', category: 'Electronics', price: 89.99 },
-  { id: 10, name: 'Mouse', category: 'Electronics', price: 59.99 },
-];
+interface Props {
+  year: number;
+  onYearChange: (y: number) => void;
+  tarifInput: TarifInput;
+}
 
-const PAGE_SIZE = 5;
+/* Months */
+const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',
+  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const FinanceTable = () => {
-  const [items, setItems] = useState<Item[]>(initialItems);
-  const [page, setPage] = useState(1);
-  const [selection, setSelection] = useState<number[]>([]);
+interface Row {
+  description: string;
+  values: number[];
+}
 
-  const pageCount = Math.ceil(items.length / PAGE_SIZE);
-  const paginated = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+/* ──────────────────────────────────────────────────────────────────── */
+const FinanceTable = forwardRef<FinanceTableHandle, Props>(
+  ({ year, onYearChange, tarifInput }, ref) => {
+    /* ── persistent state ─────────────────────────────────────────── */
+    const [rows, setRows] = useState<Row[]>([
+      { description: 'Income', values: Array(12).fill(0) }
+    ]);
+    const [revision, setRevision] = useState(0);
+    const [showChart, setShowChart] = useState(false);
 
-  const hasSelection = selection.length > 0;
-  const indeterminate =
-    hasSelection && selection.length < paginated.length;
+    /* ── debounced save ───────────────────────────────────────────── */
+    const timer = useRef<NodeJS.Timeout>();
 
-  const toggleRow = (id: number, checked: boolean) => {
-    setSelection((prev) =>
-      checked ? [...prev, id] : prev.filter((s) => s !== id)
-    );
-  };
+    const upsert = (r: number, c: number, v: number) => {
+      setRows(prev => {
+        const clone = [...prev];
+        clone[r].values[c] = v;
+        return clone;
+      });
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        saveCell({ year, row: r, col: c, value: v, revision });
+      }, 250);
+    };
 
-  const toggleAll = (checked: boolean) => {
-    setSelection(checked ? paginated.map((i) => i.id) : []);
-  };
+    /* ── load from DB every time year / revision changes ──────────── */
+    useEffect(() => {
+      getFinance(year).then((cells) => {
+        if (!cells.length) {
+          setRows(prev => prev); // keep current
+          return;
+        }
+        const maxRow = Math.max(...cells.map(c => c.row), 0);
+        const r: Row[] = [];
+        for (let i = 0; i <= maxRow; i++) {
+          r.push({ description: i === 0 ? 'Income' : Item ${i}, values: Array(12).fill(0) });
+        }
+        cells.forEach(({ row, col, value }) => {
+          if (!r[row]) r[row] = { description: Item ${row}, values: Array(12).fill(0) };
+          r[row].values[col] = value;
+        });
+        setRows(r);
+        setRevision(cells[0]?.revision ?? 0);
+      });
+    }, [year, revision]);
 
-  const deleteRows = () => {
-    setItems((prev) => prev.filter((i) => !selection.includes(i.id)));
-    setSelection([]);
-  };
+    /* ── carry-over from December of previous year ────────────────── */
+    useEffect(() => {
+      if (year <= 1970) return;
+      getFinance(year - 1).then(prevCells => {
+        const incomeDec =
+          prevCells.find(c => c.row === 0 && c.col === 11)?.value ?? 0;
+        const outDec = prevCells
+          .filter(c => c.row !== 0 && c.col === 11)
+          .reduce((s, c) => s + c.value, 0);
+        const leftover = incomeDec - outDec;
+        if (leftover !== 0) {
+          upsert(rows.length - 1, 0, rows[rows.length - 1].values[0] + leftover);
+        }
+      });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [year]);
 
-  return (
-    <Stack width="full" gap={4} p={2}>
-      <Table.ScrollArea borderWidth="1px" rounded="md" height="240px">
-        <Table.Root size="sm" stickyHeader showColumnBorder>
-          <Table.Header>
-            <Table.Row bg="bg.subtle">
-              <Table.ColumnHeader w="6">
-                <Checkbox.Root
-                  size="sm"
-                  aria-label="Select all rows"
-                  checked={indeterminate ? "indeterminate" : selection.length > 0}
-                  onCheckedChange={(c) => toggleAll(!!c.checked)}
-                >
-                  <Checkbox.HiddenInput />
-                  <Checkbox.Control />
-                </Checkbox.Root>
-              </Table.ColumnHeader>
-              <Table.ColumnHeader>Product</Table.ColumnHeader>
-              <Table.ColumnHeader>Category</Table.ColumnHeader>
-              <Table.ColumnHeader textAlign="end">Price</Table.ColumnHeader>
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {paginated.map((item) => (
-              <Table.Row
-                key={item.id}
-                data-selected={selection.includes(item.id) ? '' : undefined}
-              >
-                <Table.Cell>
-                  <Checkbox.Root
-                    size="sm"
-                    aria-label="Select row"
-                    checked={selection.includes(item.id)}
-                    onCheckedChange={(c) => toggleRow(item.id, !!c.checked)}
-                  >
-                    <Checkbox.HiddenInput />
-                    <Checkbox.Control />
-                  </Checkbox.Root>
-                </Table.Cell>
-                <Table.Cell>{item.name}</Table.Cell>
-                <Table.Cell>{item.category}</Table.Cell>
-                <Table.Cell textAlign="end">{item.price}</Table.Cell>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table.Root>
-      </Table.ScrollArea>
+    /* ── undo / redo exposed to parent ────────────────────────────── */
+    useImperativeHandle(ref, () => ({
+      undo() {
+        shiftRevision(year, 'undo').then(setRevision);
+      },
+      redo() {
+        shiftRevision(year, 'redo').then(setRevision);
+      }
+    }));
 
-      <ButtonGroup variant="ghost" size="sm" wrap="wrap" justifyContent="center">
-        <IconButton
-          aria-label="Prev"
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-          isDisabled={page === 1}
-        >
-          <LuChevronLeft />
-        </IconButton>
+    /* ── monthly leftover for chart ───────────────────────────────── */
+    const monthlyLeft: number[] = [];
+    for (let i = 0; i < 12; i++) {
+      const income = rows[0]?.values[i] ?? 0;
+      const outcome = rows
+        .slice(1)
+        .reduce((sum, row) => sum + (row.values[i] || 0), 0);
+      monthlyLeft[i] = (monthlyLeft[i - 1] || 0) + income - outcome;
+    }
 
-        {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+    const chartData = {
+      labels: months,
+      datasets: [
+        {
+          label: 'Leftover',
+          data: monthlyLeft,
+          borderColor: 'rgb(56,132,255)',
+          backgroundColor: 'rgba(56,132,255,0.2)'
+        }
+      ]
+    };
+
+    /* ── styles ───────────────────────────────────────────────────── */
+    const headerBg = useColorModeValue('gray.50', 'gray.800');
+    const borderCol = useColorModeValue('gray.200', 'gray.600');
+
+    /* ── edit modal state ─────────────────────────────────────────── */
+    const [edit, setEdit] = useState<null | { row: number; col: number; val: number }>(null);
+
+    /* ── helpers ──────────────────────────────────────────────────── */
+    const deleteRow = (idx: number) =>
+      setRows(prev => prev.filter((_, i) => i !== idx));
+
+    const addRow = () =>
+      setRows(prev => [...prev, { description: Item ${prev.length}, values: Array(12).fill(0) }]);
+
+    /* ── render ───────────────────────────────────────────────────── */
+    return (
+      <Box w="full" h="full" overflow="auto">
+        {/* controls */}
+        <HStack mb={2} gap={2}>
           <IconButton
-            key={p}
-            aria-label={`Page ${p}`}
-            variant={p === page ? 'outline' : 'ghost'}
-            onClick={() => setPage(p)}
+            aria-label="Prev year"
+            icon={<ChevronLeftIcon />}
+            size="sm"
+            variant="outline"
+            onClick={() => onYearChange(year - 1)}
+          />
+          <Box minW="70px" textAlign="center" fontWeight="bold">
+            {year}
+          </Box>
+          <IconButton
+            aria-label="Next year"
+            icon={<ChevronRightIcon />}
+            size="sm"
+            variant="outline"
+            onClick={() => onYearChange(year + 1)}
+          />
+          <Button size="sm" onClick={addRow}>
+            Add row
+          </Button>
+          <Button size="sm" onClick={() => setShowChart(s => !s)}>
+            {showChart ? 'Hide chart' : 'Show chart'}
+          </Button>
+        </HStack>
+
+        {showChart && (
+          <Box mb={4}>
+            <Line data={chartData} />
+          </Box>
+        )}
+
+        <Box overflowX="auto">
+          <Table
+            size="sm"
+            variant="striped"
+            w="full"
+            sx={{
+              'th, td': {
+                borderRight: '1px solid',
+                borderColor: borderCol
+              },
+              'th:last-child, td:last-child': { borderRight: 'none' },
+              thead: {
+                position: 'sticky',
+                top: 0,
+                zIndex: 1,
+                bg: headerBg
+              }
+            }}
           >
-            {p}
-          </IconButton>
-        ))}
+            <Thead>
+              <Tr>
+                <Th>Description</Th>
+                {months.map(m => (
+                  <Th key={m}>
+                    {m} {year}
+                  </Th>
+                ))}
+                <Th w="40px" />
+              </Tr>
+            </Thead>
+            <Tbody>
+              {rows.map((row, rIdx) => (
+                <Tr key={rIdx}>
+                  <Td>
+                    <Input
+                      variant="flushed"
+                      size="sm"
+                      value={row.description}
+                      onChange={e =>
+                        setRows(prev => {
+                          const clone = [...prev];
+                          clone[rIdx].description = e.target.value;
+                          return clone;
+                        })
+                      }
+                    />
+                  </Td>
+                  {row.values.map((v, cIdx) => (
+                    <Td
+                      key={cIdx}
+                      textAlign="right"
+                      cursor="pointer"
+                      onClick={() => setEdit({ row: rIdx, col: cIdx, val: v })}
+                      _hover={{ bg: 'blue.50' }}
+                    >
+                      {v.toFixed(2)}
+                    </Td>
+                  ))}
+                  <Td textAlign="center">
+                    {rIdx !== 0 && (
+                      <IconButton
+                        aria-label="Delete row"
+                        icon={<DeleteIcon />}
+                        size="xs"
+                        variant="ghost"
+                        colorScheme="red"
+                        onClick={() => deleteRow(rIdx)}
+                      />
+                    )}
+                  </Td>
+                </Tr>
+              ))}
+              <Tr fontWeight="bold">
+                <Td>Leftover</Td>
+                {monthlyLeft.map((v, i) => (
+                  <Td key={i} textAlign="right">
+                    {v.toFixed(2)}
+                  </Td>
+                ))}
+                <Td />
+              </Tr>
+            </Tbody>
+          </Table>
+        </Box>
 
-        <IconButton
-          aria-label="Next"
-          onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-          isDisabled={page === pageCount}
-        >
-          <LuChevronRight />
-        </IconButton>
-      </ButtonGroup>
-
-      <ActionBar.Root open={hasSelection}>
-        <Portal>
-          <ActionBar.Positioner>
-            <ActionBar.Content>
-              <ActionBar.SelectionTrigger>
-                {selection.length} selected
-              </ActionBar.SelectionTrigger>
-              <ActionBar.Separator />
-              <Button variant="outline" size="sm" onClick={deleteRows}>
-                Delete <Kbd>⌫</Kbd>
-              </Button>
-            </ActionBar.Content>
-          </ActionBar.Positioner>
-        </Portal>
-      </ActionBar.Root>
-    </Stack>
-  );
-};
+        {/* cell edit modal */}
+        <Modal isOpen={!!edit} onClose={() => setEdit(null)} isCentered>
+          <ModalOverlay />
+          {edit && (
+            <ModalContent>
+              <ModalHeader>Edit value</ModalHeader>
+              <ModalCloseButton />
+              <ModalBody>
+                <HStack>
+                  <NumberInput
+                    value={edit.val}
+                    onChange={(_, n) => setEdit(e => (e ? { ...e, val: n } : e))}
+                    precision={2}
+                    step={10}
+                  >
+                    <NumberInputField autoFocus />
+                  </NumberInput>
+                  <IconButton
+                    aria-label="Copy to row"
+                    icon={<FiCopy />}
+                    title="Fill entire row"
+                    onClick={() => {
+                      setRows(prev => {
+                        const clone = [...prev];
+                        clone[edit.row].values = Array(12).fill(edit.val);
+                        return clone;
+                      });
+                      for (let m = 0; m < 12; m++)
+                        saveCell({
+                          year,
+                          row: edit.row,
+                          col: m,
+                          value: edit.val,
+                          revision
+                        });
+                      setEdit(null);
+                    }}
+                  />
+                  <Button
+                    ml="auto"
+                    onClick={() => {
+                      upsert(edit.row, edit.col, edit.val);
+                      setEdit(null);
+                    }}
+                  >
+                    OK
+                  </Button>
+                </HStack>
+              </ModalBody>
+            </ModalContent>
+          )}
+        </Modal>
+      </Box>
+    );
+  }
+);
 
 export default FinanceTable;
+

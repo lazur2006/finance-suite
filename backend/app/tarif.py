@@ -1,3 +1,4 @@
+
 """IG Metall NRW 2025 tariff calculator."""
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Any
@@ -141,3 +142,4 @@ def get_monthly_breakdown(inp: TarifInputData) -> List[Dict[str, Any]]:
     months.append(record("November", base + res.weihnachtsgeld, ["Grund-/Zulagen", "Weihnachtsgeld"]))
     months.append(record("Dezember", base, ["Grund-/Zulagen"]))
     return months
+

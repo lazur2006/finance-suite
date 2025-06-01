@@ -1,64 +1,200 @@
-import { Box, Button, Input, FormControl, FormLabel } from '@chakra-ui/react';
-import React, { useState } from 'react';
 
-interface PayrollResult {
-  net: number;
-  income_tax: number;
-  solidarity: number;
-  church_tax: number;
-  health_employee: number;
-  health_employer: number;
-  care_employee: number;
-  care_employer: number;
-  pension_employee: number;
-  pension_employer: number;
-  unemployment_employee: number;
-  unemployment_employer: number;
-}
+import React, { useEffect } from 'react';
+import {
+  Box,
+  Button,
+  FormControl,
+  FormLabel,
+  NumberInput,
+  NumberInputField,
+  Select,
+  SimpleGrid,
+  Stat,
+  StatLabel,
+  StatNumber,
+  Stack,
+  Switch
+} from '@chakra-ui/react';
+import { saveSettings } from '../api';
 
-interface PayrollSettingsProps {
+/* ───────────── UI type + defaults ───────────── */
+export interface PayrollInputUI {
   gross: number;
-  setGross: (v: number) => void;
+  period: 'monthly' | 'yearly';
+  tax_class: number;
+  married: boolean;
+  federal_state: string;
+  church: boolean;
+  childless: boolean;
+  additional_kv: number;
 }
 
-const PayrollSettings = ({ gross, setGross }: PayrollSettingsProps) => {
-  const [result, setResult] = useState<PayrollResult | null>(null);
+export const defaultPayrollInput: PayrollInputUI = {
+  gross: 4000,
+  period: 'monthly',
+  tax_class: 1,
+  married: false,
+  federal_state: 'NW',
+  church: false,
+  childless: true,
+  additional_kv: 0.025
+};
 
-  const handleCalc = async () => {
-    const res = await fetch('/api/payroll/gross-to-net', {
+/* ───────────── component ───────────── */
+interface PayrollResult {
+  [k: string]: number;
+}
+
+interface Props {
+  value: PayrollInputUI;
+  onChange: (v: PayrollInputUI) => void;
+}
+
+const PayrollSettings: React.FC<Props> = ({ value, onChange }) => {
+  const [result, setResult] = React.useState<PayrollResult | null>(null);
+
+  const set = <K extends keyof PayrollInputUI>(k: K, v: PayrollInputUI[K]) =>
+    onChange({ ...value, [k]: v });
+
+  const calc = () =>
+    fetch('/api/payroll/gross-to-net', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gross })
-    });
-    const data: PayrollResult = await res.json();
-    setResult(data);
-  };
+      body: JSON.stringify(value)
+    })
+      .then(r => r.json())
+      .then(setResult);
+
+  /* persist */
+  useEffect(() => {
+    saveSettings('payroll', value);
+  }, [value]);
+
+  const num = (
+    label: string,
+    key: keyof PayrollInputUI,
+    step = 1,
+    min?: number,
+    max?: number
+  ) => (
+    <FormControl>
+      <FormLabel>{label}</FormLabel>
+      <NumberInput
+        value={value[key] as number}
+        onChange={(_, n) => set(key, Number.isNaN(n) ? 0 : n)}
+        step={step}
+        min={min}
+        max={max}
+        precision={2}
+      >
+        <NumberInputField />
+      </NumberInput>
+    </FormControl>
+  );
 
   return (
-    <Box>
-      <FormControl mb={2}>
-        <FormLabel>Gross (monthly)</FormLabel>
-        <Input type="number" value={gross} onChange={e => setGross(Number(e.target.value))} />
-      </FormControl>
-      <Button onClick={handleCalc}>Calculate</Button>
+    <Stack spacing={4}>
+      <SimpleGrid columns={[1, 2]} gap={4}>
+        {num('Gross', 'gross', 50, 0)}
+        <FormControl>
+          <FormLabel>Period</FormLabel>
+          <Select
+            value={value.period}
+            onChange={e => set('period', e.target.value as any)}
+          >
+            <option value="monthly">monthly</option>
+            <option value="yearly">yearly</option>
+          </Select>
+        </FormControl>
+
+        {num('Tax class', 'tax_class', 1, 1, 6)}
+        <FormControl>
+          <FormLabel>Married</FormLabel>
+          <Switch
+            isChecked={value.married}
+            onChange={e => set('married', e.target.checked)}
+          />
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Federal state</FormLabel>
+          <Select
+            value={value.federal_state}
+            onChange={e => set('federal_state', e.target.value)}
+          >
+            {[
+              'BW',
+              'BY',
+              'NW',
+              'NI',
+              'HB',
+              'HH',
+              'HE',
+              'RP',
+              'SL',
+              'SH',
+              'MV',
+              'SN',
+              'ST',
+              'BB',
+              'BE',
+              'TH'
+            ].map(s => (
+              <option key={s}>{s}</option>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Church tax</FormLabel>
+          <Switch
+            isChecked={value.church}
+            onChange={e => set('church', e.target.checked)}
+          />
+        </FormControl>
+        <FormControl>
+          <FormLabel>Childless</FormLabel>
+          <Switch
+            isChecked={value.childless}
+            onChange={e => set('childless', e.target.checked)}
+          />
+        </FormControl>
+
+        {num('Additional KV %', 'additional_kv', 0.001, 0, 0.05)}
+      </SimpleGrid>
+
+      <Button w="fit-content" onClick={calc}>
+        Calculate
+      </Button>
+
       {result && (
-        <Box mt={4}>
-          <div>Net: {result.net}</div>
-          <div>Income tax: {result.income_tax}</div>
-          <div>Solidarity: {result.solidarity}</div>
-          <div>Church tax: {result.church_tax}</div>
-          <div>Health employee: {result.health_employee}</div>
-          <div>Health employer: {result.health_employer}</div>
-          <div>Care employee: {result.care_employee}</div>
-          <div>Care employer: {result.care_employer}</div>
-          <div>Pension employee: {result.pension_employee}</div>
-          <div>Pension employer: {result.pension_employer}</div>
-          <div>Unemployment employee: {result.unemployment_employee}</div>
-          <div>Unemployment employer: {result.unemployment_employer}</div>
-        </Box>
+        <>
+          <Box fontWeight="bold">Breakdown</Box>
+          <SimpleGrid columns={[1, 2, 3]} gap={4}>
+            {Object.entries(result).map(([k, v]) => (
+              <Stat
+                key={k}
+                p={3}
+                borderWidth="1px"
+                rounded="md"
+                bg="gray.50"
+                _dark={{ bg: 'gray.700' }}
+              >
+                <StatLabel textTransform="capitalize">{k}</StatLabel>
+                <StatNumber>
+                  {v.toLocaleString('de-DE', {
+                    style: 'currency',
+                    currency: 'EUR'
+                  })}
+                </StatNumber>
+              </Stat>
+            ))}
+          </SimpleGrid>
+        </>
       )}
-    </Box>
+    </Stack>
   );
 };
 
 export default PayrollSettings;
+

@@ -1,7 +1,9 @@
-from pydantic import BaseModel
-from typing import List, Optional
 
-# Payroll schemas derived from payroll calculator
+from typing import Dict, Any, List
+from pydantic import BaseModel
+
+
+# ───────────── existing payroll / tarif models unchanged ────────────────
 class PayrollInput(BaseModel):
     gross: float
     period: str = "monthly"
@@ -11,6 +13,7 @@ class PayrollInput(BaseModel):
     church: bool = False
     childless: bool = True
     additional_kv: float = 0.025
+
 
 class PayrollResult(BaseModel):
     net: float
@@ -25,6 +28,7 @@ class PayrollResult(BaseModel):
     pension_employer: float
     unemployment_employee: float
     unemployment_employer: float
+
 
 class TarifInput(BaseModel):
     entgeltgruppe: str
@@ -41,6 +45,7 @@ class TarifInput(BaseModel):
     betriebszugehoerigkeit_monate: int = 0
     include_transformationsgeld: bool = True
 
+
 class TarifResult(BaseModel):
     monatsgrund: float
     zulagen: float
@@ -52,8 +57,21 @@ class TarifResult(BaseModel):
     weihnachtsgeld: float
     jahresentgelt: float
 
+
 class MonthlyBreakdown(BaseModel):
     Monat: str
     Brutto: float
     Bestandteile: str
+
+
+# ───────────── new DTOs for persistence / history ───────────────────────
+class Cell(BaseModel):
+    year: int
+    row: int
+    col: int
+    value: float
+    revision: int = 0
+
+
+Settings = Dict[str, Any]        #  alias for JSON settings blobs
 
