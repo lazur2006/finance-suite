@@ -12,39 +12,41 @@ import {
   Tr,
   useColorModeValue,
   useDisclosure,
-} from '@chakra-ui/react';
+} from "@chakra-ui/react";
 import {
   DeleteIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-} from '@chakra-ui/icons';
-import { FiDollarSign } from 'react-icons/fi';
-import { AiOutlineCalculator } from 'react-icons/ai';
+  DragHandleIcon,
+} from "@chakra-ui/icons";
+import { FiDollarSign } from "react-icons/fi";
+import { AiOutlineCalculator } from "react-icons/ai";
 
 import {
   DragDropContext,
   Droppable,
   Draggable,
   DropResult,
-} from 'react-beautiful-dnd';
+} from "react-beautiful-dnd";
 import {
   forwardRef,
   useEffect,
   useImperativeHandle,
   useState,
-} from 'react';
+  useCallback,
+} from "react";
 
-import { months } from './constants';
-import { calcMonthlyLeftover, isIncomeRow } from './helpers';
-import LeftoverChart from './LeftoverChart';
-import CellEditModal from './CellEditModal';
-import IncomeSettingsModal from './IncomeSettingsModal';
+import { months } from "./constants";
+import { calcMonthlyLeftover, isIncomeRow } from "./helpers";
+import LeftoverChart from "./LeftoverChart";
+import CellEditModal from "./CellEditModal";
+import IncomeSettingsModal from "./IncomeSettingsModal";
 import {
   FinanceTableHandle,
   FinanceTableProps,
   Row,
   RowMeta,
-} from './types';
+} from "./types";
 
 import {
   Cell,
@@ -55,7 +57,7 @@ import {
   getRowMeta,
   saveRowMeta,
   deleteRowMeta,
-} from '../../api';
+} from "../../api";
 
 /* ───────────────────────────────────────────────────────── */
 const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
@@ -66,10 +68,10 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
     const [revision, setRevision] = useState(0);
     const [showChart, setShowChart] = useState(false);
 
-    /* carry-over from previous year (placeholder for future feature) */
+    /* carry-over for future feature */
     const [prevLeftover] = useState(0);
 
-    /* cell-edit modal state */
+    /* cell-edit modal */
     const [edit, setEdit] =
       useState<null | { rowIdx: number; col: number; val: number }>(null);
 
@@ -92,7 +94,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
           idx,
           description:
             metaObj[idx]?.description ??
-            (idx === 0 ? 'Income' : `Item ${idx}`),
+            (idx === 0 ? "Income" : `Item ${idx}`),
           values: byRow[idx],
           income: isIncomeRow(idx, metaObj),
           position: metaObj[idx]?.position ?? idx,
@@ -112,7 +114,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
               year,
               row: 0,
               position: 0,
-              description: 'Income',
+              description: "Income",
               deleted: false,
               income: true,
             } as RowMeta;
@@ -126,37 +128,49 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
 
     /* ─── expose undo / redo to parent ─────────────────────────────── */
     useImperativeHandle(ref, () => ({
-      undo: () => shiftRevision(year, 'undo').then(setRevision),
-      redo: () => shiftRevision(year, 'redo').then(setRevision),
+      undo: () => shiftRevision(year, "undo").then(setRevision),
+      redo: () => shiftRevision(year, "redo").then(setRevision),
     }));
 
     /* ─── drag & drop handler ──────────────────────────────────────── */
-    const onDragEnd = (result: DropResult) => {
-      if (!result.destination) return;
-      const from = result.source.index;
-      const to = result.destination.index;
-      if (from === to) return;
+    const onDragEnd = useCallback(
+      (result: DropResult) => {
+        if (!result.destination) return;
+        const from = result.source.index;
+        const to = result.destination.index;
+        if (from === to) return;
 
-      setRows((prev) => {
-        const reordered = [...prev];
+        /* re-order local state */
+        const reordered = [...rows];
         const [moved] = reordered.splice(from, 1);
         reordered.splice(to, 0, moved);
 
-        reordered.forEach((r, pos) => {
-          if (r.position !== pos) {
-            r.position = pos;
-            const m: RowMeta = { ...meta[r.idx], position: pos } as RowMeta;
-            saveRowMeta(m);                            // fire-and-forget
-            setMeta((p) => ({ ...p, [r.idx]: m }));
+        const updatedRows = reordered.map((r, pos) => ({
+          ...r,
+          position: pos,
+        }));
+        setRows(updatedRows);
+
+        /* persist new positions (fire-and-forget) */
+        const newMeta = { ...meta };
+        updatedRows.forEach((r) => {
+          if (!meta[r.idx] || meta[r.idx].position !== r.position) {
+            const m: RowMeta = {
+              ...meta[r.idx],
+              position: r.position,
+            } as RowMeta;
+            newMeta[r.idx] = m;
+            saveRowMeta(m);
           }
         });
-        return reordered;
-      });
-    };
+        setMeta(newMeta);
+      },
+      [rows, meta],
+    );
 
     /* ─── helpers that mutate remote state ─────────────────────────── */
     const upsert = async (rowIdx: number, col: number, val: number) => {
-      const rev = await shiftRevision(year, 'redo');
+      const rev = await shiftRevision(year, "redo");
       await saveCell({ year, row: rowIdx, col, value: val, revision: rev });
       setRows((prev) =>
         prev.map((r) =>
@@ -223,8 +237,15 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
     const monthlyLeft = calcMonthlyLeftover(rows, prevLeftover);
 
     /* ─── theme helpers ────────────────────────────────────────────── */
-    const headerBg = useColorModeValue('gray.50', 'gray.800');
-    const borderCol = useColorModeValue('gray.200', 'gray.600');
+    const headerBg   = useColorModeValue("gray.100", "gray.700");
+    const borderCol  = useColorModeValue("gray.200", "gray.600");
+    const zebraOdd   = useColorModeValue("gray.50",  "gray.800");
+    const incomeBg   = useColorModeValue("green.50", "green.900");
+    const incomeText = useColorModeValue("green.700","green.300");
+
+    /* Dark-mode-specific hover colors */
+    const hoverBg     = useColorModeValue("gray.100", "gray.600"); // row hover
+    const cellHoverBg = useColorModeValue("blue.50",  "blue.700"); // cell hover
 
     /* ────────────────────────── render ────────────────────────────── */
     return (
@@ -275,12 +296,13 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
             Add income row
           </Button>
           <Button size="sm" onClick={() => setShowChart((s) => !s)}>
-            {showChart ? 'Hide chart' : 'Show chart'}
+            {showChart ? "Hide chart" : "Show chart"}
           </Button>
         </HStack>
 
         {showChart && (
-          <Box mb={4}>
+          /* Height limited to ~1/3 of the previous size */
+          <Box mb={4} h="25rem">
             <LeftoverChart data={monthlyLeft} />
           </Box>
         )}
@@ -289,16 +311,16 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
           <DragDropContext onDragEnd={onDragEnd}>
             <Table
               size="sm"
-              variant="striped"
+              variant="simple"
               w="full"
               sx={{
-                'th, td': {
-                  borderRight: '1px solid',
+                "th, td": {
+                  borderRight: "1px solid",
                   borderColor: borderCol,
                 },
-                'th:last-child, td:last-child': { borderRight: 'none' },
+                "th:last-child, td:last-child": { borderRight: "none" },
                 thead: {
-                  position: 'sticky',
+                  position: "sticky",
                   top: 0,
                   zIndex: 1,
                   bg: headerBg,
@@ -307,6 +329,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
             >
               <Thead>
                 <Tr>
+                  <Th w="24px" /> {/* drag-handle column */}
                   <Th>Description</Th>
                   {months.map((m) => (
                     <Th key={m}>
@@ -317,99 +340,131 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
                 </Tr>
               </Thead>
 
-              {/* Droppable container is the <Tbody> */}
-              <Droppable droppableId="finance-rows">
+              {/* Droppable container = Tbody */}
+              <Droppable droppableId="finance-rows" type="ROW">
                 {(dropProvided) => (
                   <Tbody
                     ref={dropProvided.innerRef}
                     {...dropProvided.droppableProps}
                   >
-                    {rows.map((row, index) => (
-                      <Draggable
-                        key={row.idx}
-                        draggableId={row.idx.toString()}
-                        index={index}
-                      >
-                        {(dragProvided, dragState) => (
-                          <Tr
-                            ref={dragProvided.innerRef}
-                            {...dragProvided.draggableProps}
-                            {...dragProvided.dragHandleProps}
-                            opacity={dragState.isDragging ? 0.6 : 1}
-                          >
-                            <Td>
-                              <HStack>
-                                <Input
-                                  variant="flushed"
-                                  size="sm"
-                                  value={row.description}
-                                  onChange={(e) =>
-                                    renameRow(row.idx, e.target.value)
-                                  }
-                                />
-                                <IconButton
-                                  aria-label={
-                                    row.income ? 'Income row' : 'Expense row'
-                                  }
-                                  icon={<FiDollarSign />}
-                                  size="xs"
-                                  variant="ghost"
-                                  colorScheme={row.income ? 'green' : 'gray'}
-                                  title="Toggle income / expense"
-                                  onClick={() => toggleIncome(row.idx)}
-                                />
-                                {row.idx ===
-                                  (rows.find((r) => r.income)?.idx ?? 0) && (
+                    {rows.map((row, index) => {
+                      const rowBg = row.income
+                        ? incomeBg
+                        : index % 2
+                        ? zebraOdd
+                        : "transparent";
+                      const textColor = row.income ? incomeText : undefined;
+
+                      return (
+                        <Draggable
+                          key={row.idx}
+                          draggableId={row.idx.toString()}
+                          index={index}
+                        >
+                          {(dragProvided, dragState) => (
+                            <Tr
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              opacity={dragState.isDragging ? 0.6 : 1}
+                              bg={rowBg}
+                              color={textColor}
+                              _hover={{ bg: row.income ? incomeBg : hoverBg }}
+                            >
+                              {/* handle */}
+                              <Td
+                                {...dragProvided.dragHandleProps}
+                                sx={{ cursor: "grab", px: 1, w: "24px" }}
+                              >
+                                <DragHandleIcon />
+                              </Td>
+
+                              {/* description */}
+                              <Td>
+                                <HStack>
+                                  <Input
+                                    variant="flushed"
+                                    size="sm"
+                                    value={row.description}
+                                    onChange={(e) =>
+                                      renameRow(row.idx, e.target.value)
+                                    }
+                                  />
                                   <IconButton
-                                    aria-label="Fill income"
-                                    icon={<AiOutlineCalculator />}
+                                    aria-label={
+                                      row.income
+                                        ? "Income row"
+                                        : "Expense row"
+                                    }
+                                    icon={<FiDollarSign />}
                                     size="xs"
                                     variant="ghost"
-                                    onClick={incomeDlg.onOpen}
+                                    colorScheme={row.income ? "green" : "gray"}
+                                    title="Toggle income / expense"
+                                    onClick={() => toggleIncome(row.idx)}
+                                  />
+                                  {row.idx ===
+                                    (rows.find((r) => r.income)?.idx ?? 0) && (
+                                    <IconButton
+                                      aria-label="Fill income"
+                                      icon={<AiOutlineCalculator />}
+                                      size="xs"
+                                      variant="ghost"
+                                      onClick={incomeDlg.onOpen}
+                                    />
+                                  )}
+                                </HStack>
+                              </Td>
+
+                              {/* monthly cells */}
+                              {row.values.map((v, cIdx) => (
+                                <Td
+                                  key={cIdx}
+                                  textAlign="right"
+                                  cursor="pointer"
+                                  onClick={() =>
+                                    setEdit({
+                                      rowIdx: row.idx,
+                                      col: cIdx,
+                                      val: v,
+                                    })
+                                  }
+                                  _hover={{ bg: cellHoverBg }}
+                                >
+                                  {v.toFixed(2)}
+                                </Td>
+                              ))}
+
+                              {/* delete btn */}
+                              <Td textAlign="center">
+                                {row.idx !== 0 && (
+                                  <IconButton
+                                    aria-label="Delete row"
+                                    icon={<DeleteIcon />}
+                                    size="xs"
+                                    variant="ghost"
+                                    colorScheme="red"
+                                    onClick={() => deleteRow(row.idx)}
                                   />
                                 )}
-                              </HStack>
-                            </Td>
-                            {row.values.map((v, cIdx) => (
-                              <Td
-                                key={cIdx}
-                                textAlign="right"
-                                cursor="pointer"
-                                onClick={() =>
-                                  setEdit({
-                                    rowIdx: row.idx,
-                                    col: cIdx,
-                                    val: v,
-                                  })
-                                }
-                                _hover={{ bg: 'blue.50' }}
-                              >
-                                {v.toFixed(2)}
                               </Td>
-                            ))}
-                            <Td textAlign="center">
-                              {row.idx !== 0 && (
-                                <IconButton
-                                  aria-label="Delete row"
-                                  icon={<DeleteIcon />}
-                                  size="xs"
-                                  variant="ghost"
-                                  colorScheme="red"
-                                  onClick={() => deleteRow(row.idx)}
-                                />
-                              )}
-                            </Td>
-                          </Tr>
-                        )}
-                      </Draggable>
-                    ))}
+                            </Tr>
+                          )}
+                        </Draggable>
+                      );
+                    })}
 
                     {dropProvided.placeholder}
 
-                    <Tr fontWeight="bold">
+                    {/* leftover summary row */}
+                    <Tr bg="slategray" color="white" fontWeight="semibold">
+                      <Td />
                       <Td>Leftover</Td>
                       {monthlyLeft.map((v, i) => (
-                        <Td key={i} textAlign="right">
+                        <Td
+                          key={i}
+                          textAlign="right"
+                          color={v < 0 ? "red.300" : "green.200"}
+                        >
                           {v.toFixed(2)}
                         </Td>
                       ))}
@@ -427,13 +482,17 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
           <CellEditModal
             isOpen={!!edit}
             value={edit.val}
-            onChange={(v) => setEdit((e) => (e ? { ...e, val: v } : e))}
+            onChange={(v) =>
+              setEdit((e) => (e ? { ...e, val: v } : e))
+            }
             onSave={() => {
+              if (!edit) return;
               upsert(edit.rowIdx, edit.col, edit.val);
               setEdit(null);
             }}
             onCopyRow={async () => {
-              const rev = await shiftRevision(year, 'redo');
+              if (!edit) return;
+              const rev = await shiftRevision(year, "redo");
               await Promise.all(
                 Array.from({ length: 12 }, (_, m) =>
                   saveCell({
@@ -461,7 +520,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
           tarifInput={tarifInput}
           payrollInput={payrollInput}
           applyIncome={async (nets, incomeRowIdx, yr) => {
-            const rev = await shiftRevision(yr, 'redo');
+            const rev = await shiftRevision(yr, "redo");
             await Promise.all(
               nets.map((v, m) =>
                 saveCell({
