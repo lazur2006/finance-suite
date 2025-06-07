@@ -26,14 +26,15 @@ import {
   Thead,
   Tr,
   useColorModeValue,
-  useDisclosure
+  useDisclosure,
+  Spinner
 } from '@chakra-ui/react';
 import {
   DeleteIcon,
   ChevronLeftIcon,
   ChevronRightIcon
 } from '@chakra-ui/icons';
-import { FiCopy, FiDollarSign, FiTrash2 } from 'react-icons/fi';
+import { FiCopy, FiDollarSign } from 'react-icons/fi';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -58,7 +59,11 @@ import {
   getFinance,
   saveCell,
   shiftRevision,
-  resetFinanceYear
+  resetFinanceYear,
+  RowMeta,
+  getRowMeta,
+  saveRowMeta,
+  deleteRowMeta
 } from '../api';
 
 ChartJS.register(
@@ -103,22 +108,27 @@ const months = [
 interface Row {
   description: string;
   values: number[];
+  idx: number; // DB row-id
 }
 
 /* ───────────────────────────────────────────────────────── */
 const FinanceTable = forwardRef<FinanceTableHandle, Props>(
   ({ year, onYearChange, tarifInput, payrollInput }, ref) => {
-    /* ── persistent state ──────────────────────────────── */
-    const [rows, setRows] = useState<Row[]>([
-      { description: 'Income', values: Array(12).fill(0) }
-    ]);
+    /* ── state ─────────────────────────────────────────── */
+    const [rows, setRows] = useState<Row[]>([]);
+    const [meta, setMeta] = useState<Record<number, RowMeta>>({});
     const [revision, setRevision] = useState(0);
     const [showChart, setShowChart] = useState(false);
+
+    /* carry-over from previous year (for running balance only) */
+    const [prevLeftover, setPrevLeftover] = useState(0);
+
+    /* income-settings modal */
     const incomeDlg = useDisclosure();
-    const [incomeTarif, setIncomeTarif] =
-      useState<TarifInput>(tarifInput);
+    const [incomeTarif, setIncomeTarif] = useState<TarifInput>(tarifInput);
     const [incomePayroll, setIncomePayroll] =
       useState<PayrollInput>(payrollInput);
+    const [savingIncome, setSavingIncome] = useState(false);
 
     /* keep modal state in sync with global defaults */
     useEffect(() => {
@@ -128,81 +138,84 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       }
     }, [incomeDlg.isOpen, tarifInput, payrollInput]);
 
-    /* ── debounced save ────────────────────────────────── */
-    const timer = useRef<NodeJS.Timeout>();
-
-    /**
-     * Save the cell **first**, then switch to the new revision.
-     * This avoids the race-condition where the table refreshes
-     * before the change has hit the database.
-     */
-    const upsert = (r: number, c: number, v: number) => {
-      shiftRevision(year, 'redo').then(newRev => {
-        clearTimeout(timer.current);
-
-        setRows(prev => {
-          const clone = [...prev];
-          clone[r].values[c] = v;
-          return clone;
-        });
-
-        timer.current = setTimeout(async () => {
-          await saveCell({ year, row: r, col: c, value: v, revision: newRev });
-          setRevision(newRev); // trigger reload **after** the cell is stored
-        }, 200);
+    /* ── build UI rows from DB payload ─────────────────── */
+    const buildRows = (cells: Cell[], metaObj: Record<number, RowMeta>) => {
+      const byRow: Record<number, number[]> = {};
+      cells.forEach((c) => {
+        if (metaObj[c.row]?.deleted) return;
+        if (!byRow[c.row]) byRow[c.row] = Array(12).fill(0);
+        byRow[c.row][c.col] = c.value;
       });
+      if (!byRow[0]) byRow[0] = Array(12).fill(0); // ensure Income row exists
+
+      const out: Row[] = Object.keys(byRow)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map((idx) => ({
+          idx,
+          description:
+            metaObj[idx]?.description ?? (idx === 0 ? 'Income' : `Item ${idx}`),
+          values: byRow[idx]
+        }));
+      setRows(out);
     };
 
-    /* ── load latest snapshot whenever year/revision changes ───── */
+    /* ── load snapshot + meta whenever year / revision changes ───────── */
     useEffect(() => {
-      getFinance(year).then(cells => {
-        if (!cells.length) {
-          setRows([{ description: 'Income', values: Array(12).fill(0) }]);
-          return;
+      Promise.all([getFinance(year), getRowMeta(year)]).then(
+        ([cells, metaObj]) => {
+          setMeta(metaObj);
+          buildRows(cells, metaObj);
+          if (cells.length) setRevision(cells[0].revision);
         }
-        const maxRow = Math.max(...cells.map(c => c.row), 0);
-        const r: Row[] = [];
-        for (let i = 0; i <= maxRow; i++) {
-          r.push({
-            description: i === 0 ? 'Income' : `Item ${i}`,
-            values: Array(12).fill(0)
-          });
-        }
-        cells.forEach(({ row, col, value }) => {
-          if (!r[row])
-            r[row] = {
-              description: `Item ${row}`,
-              values: Array(12).fill(0)
-            };
-          r[row].values[col] = value;
-        });
-        setRows(r);
-        setRevision(cells[0]?.revision ?? 0);
-      });
+      );
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [year, revision]);
 
-    /* ── carry-over from December of previous year ─────────────── */
+    /* ── determine *full-year* leftover from previous year ───────────── */
     useEffect(() => {
-      if (year <= 1970) return;
-      getFinance(year - 1).then(prevCells => {
-        const incomeDec =
-          prevCells.find(c => c.row === 0 && c.col === 11)?.value ?? 0;
-        const outDec = prevCells
-          .filter(c => c.row !== 0 && c.col === 11)
-          .reduce((s, c) => s + c.value, 0);
-        const leftover = incomeDec - outDec;
-        if (leftover !== 0) {
-          upsert(
-            rows.length - 1,
-            0,
-            rows[rows.length - 1].values[0] + leftover
-          );
+      if (year <= 1971) {
+        setPrevLeftover(0);
+        return;
+      }
+
+      Promise.all([getFinance(year - 1), getRowMeta(year - 1)]).then(
+        ([prevCells, prevMeta]) => {
+          // Sum all income over the year
+          const incomeSum = prevCells
+            .filter((c) => c.row === 0)
+            .reduce((s, c) => s + c.value, 0);
+
+          // Sum all outcome over the year, skipping deleted rows
+          const outcomeSum = prevCells
+            .filter((c) => c.row !== 0 && !prevMeta[c.row]?.deleted)
+            .reduce((s, c) => s + c.value, 0);
+
+          setPrevLeftover(incomeSum - outcomeSum);
         }
-      });
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+      );
     }, [year]);
 
-    /* ── undo / redo exposed to parent ───────────────────────────── */
+    /* ── debounced cell save ───────────────────────────── */
+    const timer = useRef<NodeJS.Timeout>();
+
+    const upsert = (rowIdx: number, col: number, val: number) => {
+      clearTimeout(timer.current);
+      setRows((prev) =>
+        prev.map((r) =>
+          r.idx === rowIdx
+            ? { ...r, values: r.values.map((v, i) => (i === col ? val : v)) }
+            : r
+        )
+      );
+      timer.current = setTimeout(async () => {
+        const rev = await shiftRevision(year, 'redo');
+        await saveCell({ year, row: rowIdx, col, value: val, revision: rev });
+        setRevision(rev);
+      }, 200);
+    };
+
+    /* ── expose undo / redo to parent ─────────────────── */
     useImperativeHandle(ref, () => ({
       undo() {
         shiftRevision(year, 'undo').then(setRevision);
@@ -212,14 +225,16 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       }
     }));
 
-    /* ── monthly leftover for chart ──────────────────────────────── */
+    /* ── monthly leftover for chart & summary row ────────────────────── */
     const monthlyLeft: number[] = [];
+    let running = prevLeftover; // start with carry-over from last year
     for (let i = 0; i < 12; i++) {
-      const income = rows[0]?.values[i] ?? 0;
+      const income = rows.find((r) => r.idx === 0)?.values[i] ?? 0;
       const outcome = rows
-        .slice(1)
+        .filter((r) => r.idx !== 0)
         .reduce((sum, row) => sum + (row.values[i] || 0), 0);
-      monthlyLeft[i] = (monthlyLeft[i - 1] || 0) + income - outcome;
+      running += income - outcome;
+      monthlyLeft[i] = running;
     }
 
     const chartData = {
@@ -234,27 +249,53 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
       ]
     };
 
-    /* ── styles ─────────────────────────────────────────────────── */
+    /* ── styles ───────────────────────────────────────── */
     const headerBg = useColorModeValue('gray.50', 'gray.800');
     const borderCol = useColorModeValue('gray.200', 'gray.600');
 
-    /* ── edit modal state ───────────────────────────────────────── */
+    /* ── cell-edit modal state ────────────────────────── */
     const [edit, setEdit] =
-      useState<null | { row: number; col: number; val: number }>(
-        null
-      );
+      useState<null | { rowIdx: number; col: number; val: number }>(null);
 
-    /* ── helpers ────────────────────────────────────────────────── */
-    const deleteRow = (idx: number) =>
-      setRows(prev => prev.filter((_, i) => i !== idx));
-
-    const addRow = () =>
-      setRows(prev => [
+    /* ── row helpers ──────────────────────────────────── */
+    const addRow = async () => {
+      const newIdx = Math.max(0, ...rows.map((r) => r.idx)) + 1;
+      const meta: RowMeta = {
+        year,
+        row: newIdx,
+        description: `Item ${newIdx}`,
+        deleted: false
+      };
+      await saveRowMeta(meta);
+      setMeta((m) => ({ ...m, [newIdx]: meta }));
+      setRows((prev) => [
         ...prev,
-        { description: `Item ${prev.length}`, values: Array(12).fill(0) }
+        { idx: newIdx, description: meta.description, values: Array(12).fill(0) }
       ]);
+    };
 
-    /* ── render ─────────────────────────────────────────────────── */
+    const deleteRow = async (rowIdx: number) => {
+      await deleteRowMeta(year, rowIdx);
+      setMeta((m) => ({
+        ...m,
+        [rowIdx]: { year, row: rowIdx, description: '', deleted: true }
+      }));
+      setRows((prev) => prev.filter((r) => r.idx !== rowIdx));
+    };
+
+    const renameRow = (rowIdx: number, name: string) => {
+      setRows((prev) =>
+        prev.map((r) => (r.idx === rowIdx ? { ...r, description: name } : r))
+      );
+      saveRowMeta({
+        year,
+        row: rowIdx,
+        description: name,
+        deleted: false
+      });
+    };
+
+    /* ── render ───────────────────────────────────────── */
     return (
       <Box w="full" h="full" overflow="auto">
         {/* controls */}
@@ -280,7 +321,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
           {/* reset button */}
           <IconButton
             aria-label="Reset year"
-            icon={<FiTrash2 />}
+            icon={<DeleteIcon />}
             size="sm"
             variant="outline"
             colorScheme="red"
@@ -292,10 +333,9 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
               )
                 return;
               resetFinanceYear(year).then(() => {
-                setRows([
-                  { description: 'Income', values: Array(12).fill(0) }
-                ]);
+                setRows([]);
                 setRevision(0);
+                setMeta({});
               });
             }}
           />
@@ -303,7 +343,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
           <Button size="sm" onClick={addRow}>
             Add row
           </Button>
-          <Button size="sm" onClick={() => setShowChart(s => !s)}>
+          <Button size="sm" onClick={() => setShowChart((s) => !s)}>
             {showChart ? 'Hide chart' : 'Show chart'}
           </Button>
         </HStack>
@@ -336,7 +376,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
             <Thead>
               <Tr>
                 <Th>Description</Th>
-                {months.map(m => (
+                {months.map((m) => (
                   <Th key={m}>
                     {m} {year}
                   </Th>
@@ -345,23 +385,17 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
               </Tr>
             </Thead>
             <Tbody>
-              {rows.map((row, rIdx) => (
-                <Tr key={rIdx}>
+              {rows.map((row) => (
+                <Tr key={row.idx}>
                   <Td>
                     <HStack>
                       <Input
                         variant="flushed"
                         size="sm"
                         value={row.description}
-                        onChange={e =>
-                          setRows(prev => {
-                            const clone = [...prev];
-                            clone[rIdx].description = e.target.value;
-                            return clone;
-                          })
-                        }
+                        onChange={(e) => renameRow(row.idx, e.target.value)}
                       />
-                      {rIdx === 0 && (
+                      {row.idx === 0 && (
                         <IconButton
                           aria-label="Fill income"
                           icon={<FiDollarSign />}
@@ -378,7 +412,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
                       textAlign="right"
                       cursor="pointer"
                       onClick={() =>
-                        setEdit({ row: rIdx, col: cIdx, val: v })
+                        setEdit({ rowIdx: row.idx, col: cIdx, val: v })
                       }
                       _hover={{ bg: 'blue.50' }}
                     >
@@ -386,14 +420,14 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
                     </Td>
                   ))}
                   <Td textAlign="center">
-                    {rIdx !== 0 && (
+                    {row.idx !== 0 && (
                       <IconButton
                         aria-label="Delete row"
                         icon={<DeleteIcon />}
                         size="xs"
                         variant="ghost"
                         colorScheme="red"
-                        onClick={() => deleteRow(rIdx)}
+                        onClick={() => deleteRow(row.idx)}
                       />
                     )}
                   </Td>
@@ -413,9 +447,14 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
         </Box>
 
         {/* cell edit modal */}
-        <Modal isOpen={!!edit} onClose={() => setEdit(null)} isCentered>
-          <ModalOverlay />
-          {edit && (
+        {edit && (
+          <Modal
+            isOpen={!!edit}
+            onClose={() => setEdit(null)}
+            isCentered
+            size="xs"
+          >
+            <ModalOverlay />
             <ModalContent>
               <ModalHeader>Edit value</ModalHeader>
               <ModalCloseButton />
@@ -424,7 +463,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
                   <NumberInput
                     value={edit.val}
                     onChange={(_, n) =>
-                      setEdit(e => (e ? { ...e, val: n } : e))
+                      setEdit((e) => (e ? { ...e, val: n } : e))
                     }
                     precision={2}
                     step={10}
@@ -435,32 +474,27 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
                     aria-label="Copy to row"
                     icon={<FiCopy />}
                     title="Fill entire row"
-                    onClick={() => {
-                      shiftRevision(year, 'redo').then(newRev => {
-                        setRows(prev => {
-                          const clone = [...prev];
-                          clone[edit.row].values = Array(12).fill(
-                            edit.val
-                          );
-                          return clone;
-                        });
-                        for (let m = 0; m < 12; m++)
+                    onClick={async () => {
+                      const rev = await shiftRevision(year, 'redo');
+                      await Promise.all(
+                        Array.from({ length: 12 }, (_, m) =>
                           saveCell({
                             year,
-                            row: edit.row,
+                            row: edit.rowIdx,
                             col: m,
                             value: edit.val,
-                            revision: newRev
-                          });
-                        setRevision(newRev);
-                        setEdit(null);
-                      });
+                            revision: rev
+                          })
+                        )
+                      );
+                      setRevision(rev);
+                      setEdit(null);
                     }}
                   />
                   <Button
                     ml="auto"
                     onClick={() => {
-                      upsert(edit.row, edit.col, edit.val);
+                      upsert(edit.rowIdx, edit.col, edit.val);
                       setEdit(null);
                     }}
                   >
@@ -469,8 +503,8 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
                 </HStack>
               </ModalBody>
             </ModalContent>
-          )}
-        </Modal>
+          </Modal>
+        )}
 
         {/* income settings modal */}
         <Modal
@@ -484,10 +518,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
             <ModalHeader>Income Settings</ModalHeader>
             <ModalCloseButton />
             <ModalBody overflow="auto" pb={4}>
-              <TarifSettings
-                value={incomeTarif}
-                onChange={setIncomeTarif}
-              />
+              <TarifSettings value={incomeTarif} onChange={setIncomeTarif} />
               <PayrollSettings
                 value={incomePayroll}
                 onChange={setIncomePayroll}
@@ -495,42 +526,78 @@ const FinanceTable = forwardRef<FinanceTableHandle, Props>(
               <Button
                 mt={4}
                 colorScheme="blue"
+                isDisabled={savingIncome}
                 onClick={async () => {
-                  const tarif = await fetch('/api/tarif/estimate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(incomeTarif)
-                  }).then(r => r.json());
-                  const payroll = await fetch('/api/payroll/gross-to-net', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      ...incomePayroll,
-                      gross: tarif.monatsgesamt
-                    })
-                  }).then(r => r.json());
-                  const net = payroll.net;
+                  setSavingIncome(true);
+                  try {
+                    /* 1️⃣  Get month-by-month gross breakdown ---------------- */
+                    const breakdown: {
+                      Monat: string;
+                      Brutto: number;
+                    }[] = await fetch('/api/tarif/breakdown', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(incomeTarif)
+                    }).then((r) => r.json());
 
-                  // shift revision **once** and update all months in one go
-                  const rev = await shiftRevision(year, 'redo');
-                  setRows(prev => {
-                    const clone = [...prev];
-                    if (clone[0]) clone[0].values = Array(12).fill(net);
-                    return clone;
-                  });
-                  for (let m = 0; m < 12; m++)
-                    await saveCell({
-                      year,
-                      row: 0,
-                      col: m,
-                      value: net,
-                      revision: rev
-                    });
-                  setRevision(rev);
-                  incomeDlg.onClose();
+                    /* helper to convert german month name → 0-based index */
+                    const monthIndex: Record<string, number> = {
+                      Januar: 0,
+                      Februar: 1,
+                      März: 2,
+                      April: 3,
+                      Mai: 4,
+                      Juni: 5,
+                      Juli: 6,
+                      August: 7,
+                      September: 8,
+                      Oktober: 9,
+                      November: 10,
+                      Dezember: 11
+                    };
+
+                    /* 2️⃣  For each month run payroll => net ---------------- */
+                    const nets: number[] = Array(12).fill(0);
+                    await Promise.all(
+                      breakdown.map(async (rec) => {
+                        const res = await fetch('/api/payroll/gross-to-net', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            ...incomePayroll,
+                            gross: rec.Brutto
+                          })
+                        }).then((r) => r.json());
+                        nets[monthIndex[rec.Monat]] = res.net;
+                      })
+                    );
+
+                    /* 3️⃣  Persist one new revision snapshot ----------------- */
+                    const rev = await shiftRevision(year, 'redo');
+                    await Promise.all(
+                      nets.map((v, m) =>
+                        saveCell({
+                          year,
+                          row: 0,
+                          col: m,
+                          value: v,
+                          revision: rev
+                        })
+                      )
+                    );
+
+                    /* 4️⃣  Update UI state ----------------------------------- */
+                    setRows((prev) =>
+                      prev.map((r) => (r.idx === 0 ? { ...r, values: nets } : r))
+                    );
+                    setRevision(rev);
+                    incomeDlg.onClose();
+                  } finally {
+                    setSavingIncome(false);
+                  }
                 }}
               >
-                Apply
+                {savingIncome && <Spinner size="xs" mr={2} />}Apply
               </Button>
             </ModalBody>
           </ModalContent>

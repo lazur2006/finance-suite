@@ -1,9 +1,8 @@
-
-from typing import Dict, Any, List
+from typing import Dict, Any
 from pydantic import BaseModel
 
 
-# ───────────── existing payroll / tarif models unchanged ────────────────
+# ───────────── payroll / tarif DTOs (unchanged) ─────────────
 class PayrollInput(BaseModel):
     gross: float
     period: str = "monthly"
@@ -58,13 +57,7 @@ class TarifResult(BaseModel):
     jahresentgelt: float
 
 
-class MonthlyBreakdown(BaseModel):
-    Monat: str
-    Brutto: float
-    Bestandteile: str
-
-
-# ───────────── new DTOs for persistence / history ───────────────────────
+# ───────────── finance-table persistence DTOs ─────────────
 class Cell(BaseModel):
     year: int
     row: int
@@ -73,5 +66,19 @@ class Cell(BaseModel):
     revision: int = 0
 
 
-Settings = Dict[str, Any]        #  alias for JSON settings blobs
+class RowMeta(BaseModel):
+    year: int
+    row: int
+    description: str
+    deleted: bool = False
 
+
+# ───────────── extra DTO for /tarif/breakdown ─────────────
+class MonthlyBreakdown(BaseModel):
+    Monat: str
+    Brutto: float
+    Bestandteile: str
+
+
+# ───────────── shorthand alias ─────────────
+Settings = Dict[str, Any]

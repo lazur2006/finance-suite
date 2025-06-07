@@ -1,6 +1,5 @@
-version: '3.9'
-
 services:
+  # ──────────────────────────────────────────── database ──
   db:
     image: postgres:15
     environment:
@@ -11,6 +10,7 @@ services:
       - db-data:/var/lib/postgresql/data
     restart: always
 
+  # ──────────────────────────────────────────── backend ──
   backend:
     build: ./backend
     volumes:
@@ -18,7 +18,14 @@ services:
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/finance
     ports:
-      - "8878:8878"  # still publish raw API port for convenience
+      - "8878:8878"
+    restart: always
+    # ✓ valid YAML flow list – one line, commas inside the []
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8878/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
     labels:
       - "traefik.http.routers.backend.rule=PathPrefix(`/api`)"
       - "traefik.http.routers.backend.entrypoints=web"
@@ -26,7 +33,9 @@ services:
     depends_on:
       - db
 
+  # ───────── production bundle (enable with --profile prod) ─────────
   frontend:
+    profiles: ["prod"]
     build: ./frontend
     depends_on:
       - backend
@@ -35,6 +44,7 @@ services:
       - "traefik.http.routers.frontend.entrypoints=web"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
+  # ──────────────────────────────────────────── traefik ──
   traefik:
     image: traefik:v2.10
     command:
@@ -42,11 +52,11 @@ services:
       - "--providers.docker=true"
       - "--entrypoints.web.address=:8877"
     ports:
-      - "8877:8877"            # single public port for UI & API
+      - "8877:8877"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      - frontend
+    # let Traefik come up no matter what
+    depends_on: []
 
 volumes:
   db-data:

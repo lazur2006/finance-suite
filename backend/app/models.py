@@ -1,4 +1,3 @@
-
 from datetime import datetime
 from typing import Optional, Dict, Any
 
@@ -14,9 +13,9 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
 #  Finance-table cells (one cell per month / row / col / year)
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
 class FinanceCell(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
@@ -24,25 +23,26 @@ class FinanceCell(SQLModel, table=True):
     row: int
     col: int
     value: float
-    revision: int = 0                     # 0–10 ring buffer for undo/redo
+    revision: int = 0                     # 0-10 ring buffer for undo/redo
     ts: datetime = Field(default_factory=datetime.utcnow)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Persisted settings (latest snapshot is loaded as defaults)
-# ─────────────────────────────────────────────────────────────────────────────
-class Setting(SQLModel, table=True):
+# ────────────────────────────────────────────────────────────────
+#  Row meta-data (name / deleted flag) – one per logical row/year
+# ────────────────────────────────────────────────────────────────
+class FinanceRow(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
-    group: str = Field(index=True)        # "tarif" | "payroll"
-    # JSON column needs explicit SQLAlchemy Column wrapper ⬇
-    data: Dict[str, Any] = Field(sa_column=Column(SA_JSON))
+    year: int = Field(index=True)
+    row: int = Field(index=True)
+    description: str
+    deleted: bool = False
     ts: datetime = Field(default_factory=datetime.utcnow)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Action logs (chronological list of user actions)
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
+#  Action log – simple audit trail
+# ────────────────────────────────────────────────────────────────
 class ActionLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
@@ -50,3 +50,13 @@ class ActionLog(SQLModel, table=True):
     info: Dict[str, Any] = Field(sa_column=Column(SA_JSON))
     ts: datetime = Field(default_factory=datetime.utcnow)
 
+
+# ────────────────────────────────────────────────────────────────
+#  Persisted UI settings blobs
+# ────────────────────────────────────────────────────────────────
+class Setting(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    group: str = Field(index=True)        # "tarif" | "payroll"
+    data: Dict[str, Any] = Field(sa_column=Column(SA_JSON))
+    ts: datetime = Field(default_factory=datetime.utcnow)
