@@ -60,6 +60,45 @@ import {
 } from "../../api";
 
 /* ───────────────────────────────────────────────────────── */
+/** shared helper: maps DB snapshot + meta → renderable rows */
+const toRows = (
+  cells: Cell[],
+  metaObj: Record<number, RowMeta>,
+  year: number,
+): Row[] => {
+  // ensure we always have a meta record for row-0 (income)
+  if (!metaObj[0]) {
+    metaObj[0] = {
+      year,
+      row: 0,
+      position: 0,
+      description: "Income",
+      deleted: false,
+      income: true,
+    } as RowMeta;
+  }
+
+  const byRow: Record<number, number[]> = {};
+  cells.forEach((c) => {
+    if (metaObj[c.row]?.deleted) return;
+    if (!byRow[c.row]) byRow[c.row] = Array(12).fill(0);
+    byRow[c.row][c.col] = c.value;
+  });
+  if (!byRow[0]) byRow[0] = Array(12).fill(0);
+
+  return Object.keys(byRow)
+    .map(Number)
+    .map((idx) => ({
+      idx,
+      description:
+        metaObj[idx]?.description ?? (idx === 0 ? "Income" : `Item ${idx}`),
+      values: byRow[idx],
+      income: isIncomeRow(idx, metaObj),
+      position: metaObj[idx]?.position ?? idx,
+    }))
+    .sort((a, b) => a.position - b.position);
+};
+
 const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
   ({ year, onYearChange, tarifInput, payrollInput }, ref) => {
     /* ─── state ───────────────────────────────────────── */
@@ -68,8 +107,8 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
     const [revision, setRevision] = useState(0);
     const [showChart, setShowChart] = useState(false);
 
-    /* carry-over for future feature */
-    const [prevLeftover] = useState(0);
+    /* NEW: leftover carried over from previous year */
+    const [prevLeftover, setPrevLeftover] = useState(0);
 
     /* cell-edit modal */
     const [edit, setEdit] =
@@ -78,53 +117,43 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
     /* income-settings modal */
     const incomeDlg = useDisclosure();
 
-    /* ─── helper: build visible rows from DB snapshot + meta ───────── */
-    const buildRows = (cells: Cell[], metaObj: Record<number, RowMeta>) => {
-      const byRow: Record<number, number[]> = {};
-      cells.forEach((c) => {
-        if (metaObj[c.row]?.deleted) return;
-        if (!byRow[c.row]) byRow[c.row] = Array(12).fill(0);
-        byRow[c.row][c.col] = c.value;
-      });
-      if (!byRow[0]) byRow[0] = Array(12).fill(0); // ensure at least one income row
-
-      const out: Row[] = Object.keys(byRow)
-        .map(Number)
-        .map((idx) => ({
-          idx,
-          description:
-            metaObj[idx]?.description ??
-            (idx === 0 ? "Income" : `Item ${idx}`),
-          values: byRow[idx],
-          income: isIncomeRow(idx, metaObj),
-          position: metaObj[idx]?.position ?? idx,
-        }))
-        .sort((a, b) => a.position - b.position);
-
-      setRows(out);
-    };
-
-    /* ─── load snapshot + meta whenever year OR revision changes ───── */
+    /* ─── load CURRENT year snapshot + meta ────────────────────────── */
     useEffect(() => {
-      Promise.all([getFinance(year), getRowMeta(year)]).then(
-        ([cells, metaObj]) => {
-          // guarantee legacy row-0 is income
-          if (!metaObj[0])
-            metaObj[0] = {
-              year,
-              row: 0,
-              position: 0,
-              description: "Income",
-              deleted: false,
-              income: true,
-            } as RowMeta;
+      const loadCurrent = async () => {
+        const [cells, metaObj] = await Promise.all([
+          getFinance(year),
+          getRowMeta(year),
+        ]);
 
-          setMeta(metaObj);
-          buildRows(cells, metaObj);
-          if (cells.length) setRevision(cells[0].revision);
-        },
-      );
+        const currentRows = toRows(cells, metaObj, year);
+        setRows(currentRows);
+        setMeta(metaObj);
+        if (cells.length) setRevision(cells[0].revision);
+      };
+
+      loadCurrent();
     }, [year, revision]);
+
+    /* ─── load PREVIOUS year to compute carry-over ─────────────────── */
+    useEffect(() => {
+      const loadPrev = async () => {
+        const [cellsPrev, metaPrev] = await Promise.all([
+          getFinance(year - 1),
+          getRowMeta(year - 1),
+        ]);
+
+        if (!cellsPrev.length) {
+          setPrevLeftover(0);
+          return;
+        }
+
+        const prevRows = toRows(cellsPrev, metaPrev, year - 1);
+        const left = calcMonthlyLeftover(prevRows, 0);
+        setPrevLeftover(left[left.length - 1] ?? 0);
+      };
+
+      loadPrev();
+    }, [year]);
 
     /* ─── expose undo / redo to parent ─────────────────────────────── */
     useImperativeHandle(ref, () => ({
@@ -140,7 +169,6 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
         const to = result.destination.index;
         if (from === to) return;
 
-        /* re-order local state */
         const reordered = [...rows];
         const [moved] = reordered.splice(from, 1);
         reordered.splice(to, 0, moved);
@@ -151,14 +179,10 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
         }));
         setRows(updatedRows);
 
-        /* persist new positions (fire-and-forget) */
         const newMeta = { ...meta };
         updatedRows.forEach((r) => {
           if (!meta[r.idx] || meta[r.idx].position !== r.position) {
-            const m: RowMeta = {
-              ...meta[r.idx],
-              position: r.position,
-            } as RowMeta;
+            const m: RowMeta = { ...meta[r.idx], position: r.position } as RowMeta;
             newMeta[r.idx] = m;
             saveRowMeta(m);
           }
@@ -169,9 +193,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
     );
 
     /* ─── helpers that mutate remote state ─────────────────────────── */
-    const upsert = async (rowIdx: number, col: number, val: number) => {
-      const rev = await shiftRevision(year, "redo");
-      await saveCell({ year, row: rowIdx, col, value: val, revision: rev });
+    const upsert = (rowIdx: number, col: number, val: number) => {
       setRows((prev) =>
         prev.map((r) =>
           r.idx === rowIdx
@@ -179,9 +201,46 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
             : r,
         ),
       );
-      setRevision(rev);
+
+      (async () => {
+        try {
+          const rev = await shiftRevision(year, "redo");
+          await saveCell({ year, row: rowIdx, col, value: val, revision: rev });
+          setRevision(rev);
+        } catch (err) {
+          console.error(err);
+        }
+      })();
     };
 
+    const copyValueToRow = (rowIdx: number, val: number) => {
+      const newVals = Array(12).fill(val);
+      setRows((prev) =>
+        prev.map((r) => (r.idx === rowIdx ? { ...r, values: newVals } : r)),
+      );
+
+      (async () => {
+        try {
+          const rev = await shiftRevision(year, "redo");
+          await Promise.all(
+            newVals.map((v, m) =>
+              saveCell({
+                year,
+                row: rowIdx,
+                col: m,
+                value: v,
+                revision: rev,
+              }),
+            ),
+          );
+          setRevision(rev);
+        } catch (err) {
+          console.error(err);
+        }
+      })();
+    };
+
+    /* other row helpers (add / delete / rename / toggleIncome) */
     const addRow = async (asIncome: boolean) => {
       const newIdx = Math.max(0, ...rows.map((r) => r.idx)) + 1;
       const metaRec: RowMeta = {
@@ -240,12 +299,11 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
     const headerBg   = useColorModeValue("gray.100", "gray.700");
     const borderCol  = useColorModeValue("gray.200", "gray.600");
     const zebraOdd   = useColorModeValue("gray.50",  "gray.800");
-    const incomeBg   = useColorModeValue("green.50", "green.900");
+    const incomeBg   = useColorModeValue("green.50","green.900");
     const incomeText = useColorModeValue("green.700","green.300");
 
-    /* Dark-mode-specific hover colors */
-    const hoverBg     = useColorModeValue("gray.100", "gray.600"); // row hover
-    const cellHoverBg = useColorModeValue("blue.50",  "blue.700"); // cell hover
+    const rowHoverBg  = useColorModeValue("gray.100", "gray.600");
+    const cellHoverBg = useColorModeValue("blue.50",  "blue.700");
 
     /* ────────────────────────── render ────────────────────────────── */
     return (
@@ -301,8 +359,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
         </HStack>
 
         {showChart && (
-          /* Height limited to ~1/3 of the previous size */
-          <Box mb={4} h="25rem">
+          <Box mb={4} h="140px">
             <LeftoverChart data={monthlyLeft} />
           </Box>
         )}
@@ -368,7 +425,9 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
                               opacity={dragState.isDragging ? 0.6 : 1}
                               bg={rowBg}
                               color={textColor}
-                              _hover={{ bg: row.income ? incomeBg : hoverBg }}
+                              _hover={{
+                                bg: row.income ? incomeBg : rowHoverBg,
+                              }}
                             >
                               {/* handle */}
                               <Td
@@ -490,21 +549,9 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
               upsert(edit.rowIdx, edit.col, edit.val);
               setEdit(null);
             }}
-            onCopyRow={async () => {
+            onCopyRow={() => {
               if (!edit) return;
-              const rev = await shiftRevision(year, "redo");
-              await Promise.all(
-                Array.from({ length: 12 }, (_, m) =>
-                  saveCell({
-                    year,
-                    row: edit.rowIdx,
-                    col: m,
-                    value: edit.val,
-                    revision: rev,
-                  }),
-                ),
-              );
-              setRevision(rev);
+              copyValueToRow(edit.rowIdx, edit.val);
               setEdit(null);
             }}
             onClose={() => setEdit(null)}
