@@ -44,8 +44,10 @@ export async function resetFinanceYear(year: number): Promise<void> {
 export interface RowMeta {
   year: number;
   row: number;
+  position: number;             // NEW
   description: string;
   deleted: boolean;
+  income?: boolean;
 }
 
 export async function getRowMeta(

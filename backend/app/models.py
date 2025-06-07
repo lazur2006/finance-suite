@@ -28,15 +28,17 @@ class FinanceCell(SQLModel, table=True):
 
 
 # ────────────────────────────────────────────────────────────────
-#  Row meta-data (name / deleted flag) – one per logical row/year
+#  Row meta-data – one per logical row / year
 # ────────────────────────────────────────────────────────────────
 class FinanceRow(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     year: int = Field(index=True)
-    row: int = Field(index=True)
+    row: int = Field(index=True)          # immutable row-id
+    position: int = 0                     # NEW – display order
     description: str
     deleted: bool = False
+    income: bool = False
     ts: datetime = Field(default_factory=datetime.utcnow)
 
 

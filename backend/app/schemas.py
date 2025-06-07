@@ -69,8 +69,10 @@ class Cell(BaseModel):
 class RowMeta(BaseModel):
     year: int
     row: int
+    position: int = 0          # NEW
     description: str
     deleted: bool = False
+    income: bool = False
 
 
 # ───────────── extra DTO for /tarif/breakdown ─────────────

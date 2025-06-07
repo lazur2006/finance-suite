@@ -52,6 +52,7 @@ def finance_rows(year: int, s: Session = Depends(db)):
             models.FinanceRow.year == year
         )
     ).all()
+    # return keyed by immutable row-id
     out = {r.row: schemas.RowMeta(**r.dict()) for r in rows}
     log_action(s, "finance_rows", {"year": year})
     return out
@@ -66,8 +67,11 @@ def save_row(meta: schemas.RowMeta, s: Session = Depends(db)):
         )
     ).first()
     if rec:
+        # update editable fields
         rec.description = meta.description
         rec.deleted = meta.deleted
+        rec.income = meta.income
+        rec.position = meta.position                # NEW
     else:
         rec = models.FinanceRow(**meta.dict())
         s.add(rec)
