@@ -2,6 +2,24 @@ from typing import Dict, Any
 from pydantic import BaseModel
 
 
+# ───────────── finance-table persistence DTOs ─────────────
+class Cell(BaseModel):
+    year: int
+    row: int
+    col: int
+    value: float
+    revision: int = 0
+
+
+class RowMeta(BaseModel):
+    year: int
+    row: int
+    position: int = 0
+    description: str
+    deleted: bool = False
+    income: bool = False
+    irregular: bool = False   # NEW
+
 # ───────────── payroll / tarif DTOs (unchanged) ─────────────
 class PayrollInput(BaseModel):
     gross: float

@@ -15,7 +15,7 @@ export interface Cell {
 /* ───────────────────────── finance-table persistence ─────────────────── */
 
 export async function getFinance(year: number): Promise<Cell[]> {
-  return fetch(`/api/finance/${year}`).then((r) => r.json());
+  return fetch(`/api/finance/${year}`).then(r => r.json());
 }
 
 export async function saveCell(cell: Cell): Promise<void> {
@@ -31,7 +31,7 @@ export async function shiftRevision(
   dir: 'undo' | 'redo'
 ): Promise<number> {
   return fetch(`/api/finance/revision/${year}/${dir}`, { method: 'POST' }).then(
-    (r) => r.json()
+    r => r.json()
   );
 }
 
@@ -44,16 +44,17 @@ export async function resetFinanceYear(year: number): Promise<void> {
 export interface RowMeta {
   year: number;
   row: number;
-  position: number;             // NEW
+  position: number;
   description: string;
   deleted: boolean;
   income?: boolean;
+  irregular?: boolean;        // NEW
 }
 
 export async function getRowMeta(
   year: number
 ): Promise<Record<number, RowMeta>> {
-  return fetch(`/api/finance/${year}/rows`).then((r) => r.json());
+  return fetch(`/api/finance/${year}/rows`).then(r => r.json());
 }
 
 export async function saveRowMeta(meta: RowMeta): Promise<void> {
@@ -71,7 +72,7 @@ export async function deleteRowMeta(year: number, row: number): Promise<void> {
 /* ───────────────────────── user settings persistence ─────────────────── */
 
 export async function loadSettings<T = any>(group: string): Promise<T> {
-  return fetch(`/api/settings/${group}`).then((r) => r.json());
+  return fetch(`/api/settings/${group}`).then(r => r.json());
 }
 
 export async function saveSettings(group: string, data: any): Promise<void> {

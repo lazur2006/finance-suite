@@ -14,7 +14,7 @@ class User(SQLModel, table=True):
 
 
 # ────────────────────────────────────────────────────────────────
-#  Finance-table cells (one cell per month / row / col / year)
+#  Finance-table cells
 # ────────────────────────────────────────────────────────────────
 class FinanceCell(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -23,7 +23,7 @@ class FinanceCell(SQLModel, table=True):
     row: int
     col: int
     value: float
-    revision: int = 0                     # 0-10 ring buffer for undo/redo
+    revision: int = 0
     ts: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -35,15 +35,16 @@ class FinanceRow(SQLModel, table=True):
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     year: int = Field(index=True)
     row: int = Field(index=True)          # immutable row-id
-    position: int = 0                     # NEW – display order
+    position: int = 0
     description: str
     deleted: bool = False
     income: bool = False
+    irregular: bool = False               # NEW
     ts: datetime = Field(default_factory=datetime.utcnow)
 
 
 # ────────────────────────────────────────────────────────────────
-#  Action log – simple audit trail
+#  Action log
 # ────────────────────────────────────────────────────────────────
 class ActionLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -59,6 +60,6 @@ class ActionLog(SQLModel, table=True):
 class Setting(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
-    group: str = Field(index=True)        # "tarif" | "payroll"
+    group: str = Field(index=True)
     data: Dict[str, Any] = Field(sa_column=Column(SA_JSON))
     ts: datetime = Field(default_factory=datetime.utcnow)

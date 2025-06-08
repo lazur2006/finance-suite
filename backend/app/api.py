@@ -71,7 +71,8 @@ def save_row(meta: schemas.RowMeta, s: Session = Depends(db)):
         rec.description = meta.description
         rec.deleted = meta.deleted
         rec.income = meta.income
-        rec.position = meta.position                # NEW
+        rec.irregular = meta.irregular          # NEW
+        rec.position = meta.position
     else:
         rec = models.FinanceRow(**meta.dict())
         s.add(rec)
@@ -79,6 +80,7 @@ def save_row(meta: schemas.RowMeta, s: Session = Depends(db)):
     s.refresh(rec)
     log_action(s, "save_row", {"row": rec.row, "year": rec.year})
     return schemas.RowMeta(**rec.dict())
+
 
 
 @router.delete("/finance/row/{year}/{row}", status_code=204)

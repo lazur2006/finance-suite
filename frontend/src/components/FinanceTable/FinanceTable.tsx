@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import {
   Box,
   Button,
@@ -18,6 +19,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   DragHandleIcon,
+  StarIcon,
 } from "@chakra-ui/icons";
 import { FiDollarSign } from "react-icons/fi";
 import { AiOutlineCalculator } from "react-icons/ai";
@@ -59,14 +61,16 @@ import {
   deleteRowMeta,
 } from "../../api";
 
+/* Height (px) of the fixed toolbar – keep in sync with `h` below */
+const TOOLBAR_H = 48;
+
 /* ───────────────────────────────────────────────────────── */
-/** shared helper: maps DB snapshot + meta → renderable rows */
+/** maps DB snapshot + meta → renderable rows */
 const toRows = (
   cells: Cell[],
   metaObj: Record<number, RowMeta>,
   year: number,
 ): Row[] => {
-  // ensure we always have a meta record for row-0 (income)
   if (!metaObj[0]) {
     metaObj[0] = {
       year,
@@ -94,6 +98,7 @@ const toRows = (
         metaObj[idx]?.description ?? (idx === 0 ? "Income" : `Item ${idx}`),
       values: byRow[idx],
       income: isIncomeRow(idx, metaObj),
+      irregular: metaObj[idx]?.irregular ?? false,
       position: metaObj[idx]?.position ?? idx,
     }))
     .sort((a, b) => a.position - b.position);
@@ -106,62 +111,51 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
     const [meta, setMeta] = useState<Record<number, RowMeta>>({});
     const [revision, setRevision] = useState(0);
     const [showChart, setShowChart] = useState(false);
-
-    /* NEW: leftover carried over from previous year */
     const [prevLeftover, setPrevLeftover] = useState(0);
-
-    /* cell-edit modal */
     const [edit, setEdit] =
       useState<null | { rowIdx: number; col: number; val: number }>(null);
 
-    /* income-settings modal */
     const incomeDlg = useDisclosure();
 
-    /* ─── load CURRENT year snapshot + meta ────────────────────────── */
+    /* ─── load CURRENT year snapshot + meta ─────────────── */
     useEffect(() => {
       const loadCurrent = async () => {
         const [cells, metaObj] = await Promise.all([
           getFinance(year),
           getRowMeta(year),
         ]);
-
-        const currentRows = toRows(cells, metaObj, year);
-        setRows(currentRows);
+        setRows(toRows(cells, metaObj, year));
         setMeta(metaObj);
         if (cells.length) setRevision(cells[0].revision);
       };
-
       loadCurrent();
     }, [year, revision]);
 
-    /* ─── load PREVIOUS year to compute carry-over ─────────────────── */
+    /* ─── load PREVIOUS year for carry-over ─────────────── */
     useEffect(() => {
       const loadPrev = async () => {
         const [cellsPrev, metaPrev] = await Promise.all([
           getFinance(year - 1),
           getRowMeta(year - 1),
         ]);
-
         if (!cellsPrev.length) {
           setPrevLeftover(0);
           return;
         }
-
         const prevRows = toRows(cellsPrev, metaPrev, year - 1);
         const left = calcMonthlyLeftover(prevRows, 0);
         setPrevLeftover(left[left.length - 1] ?? 0);
       };
-
       loadPrev();
     }, [year]);
 
-    /* ─── expose undo / redo to parent ─────────────────────────────── */
+    /* expose undo / redo to parent */
     useImperativeHandle(ref, () => ({
       undo: () => shiftRevision(year, "undo").then(setRevision),
       redo: () => shiftRevision(year, "redo").then(setRevision),
     }));
 
-    /* ─── drag & drop handler ──────────────────────────────────────── */
+    /* ─── drag & drop handler ───────────────────────────── */
     const onDragEnd = useCallback(
       (result: DropResult) => {
         if (!result.destination) return;
@@ -192,7 +186,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
       [rows, meta],
     );
 
-    /* ─── helpers that mutate remote state ─────────────────────────── */
+    /* ─── helpers that mutate remote state ──────────────── */
     const upsert = (rowIdx: number, col: number, val: number) => {
       setRows((prev) =>
         prev.map((r) =>
@@ -240,16 +234,21 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
       })();
     };
 
-    /* other row helpers (add / delete / rename / toggleIncome) */
-    const addRow = async (asIncome: boolean) => {
+    /* add row (expense / income / irregular) */
+    const addRow = async (asIncome: boolean, asIrregular = false) => {
       const newIdx = Math.max(0, ...rows.map((r) => r.idx)) + 1;
       const metaRec: RowMeta = {
         year,
         row: newIdx,
         position: rows.length,
-        description: asIncome ? `Income ${newIdx}` : `Item ${newIdx}`,
+        description: asIncome
+          ? `Income ${newIdx}`
+          : asIrregular
+          ? `Irregular ${newIdx}`
+          : `Item ${newIdx}`,
         deleted: false,
         income: asIncome,
+        irregular: asIrregular,
       };
       await saveRowMeta(metaRec);
       setMeta((m) => ({ ...m, [newIdx]: metaRec }));
@@ -260,6 +259,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
           description: metaRec.description,
           values: Array(12).fill(0),
           income: asIncome,
+          irregular: asIrregular,
           position: metaRec.position,
         },
       ]);
@@ -292,24 +292,37 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
       );
     };
 
-    /* ─── derived data ─────────────────────────────────────────────── */
+    /* derived data */
     const monthlyLeft = calcMonthlyLeftover(rows, prevLeftover);
 
-    /* ─── theme helpers ────────────────────────────────────────────── */
-    const headerBg   = useColorModeValue("gray.100", "gray.700");
-    const borderCol  = useColorModeValue("gray.200", "gray.600");
-    const zebraOdd   = useColorModeValue("gray.50",  "gray.800");
-    const incomeBg   = useColorModeValue("green.50","green.900");
-    const incomeText = useColorModeValue("green.700","green.300");
+    /* theme helpers */
+    const headerBg  = useColorModeValue("gray.100", "gray.700");
+    const borderCol = useColorModeValue("gray.200", "gray.600");
+    const zebraOdd  = useColorModeValue("gray.50",  "gray.800");
 
-    const rowHoverBg  = useColorModeValue("gray.100", "gray.600");
+    const incomeBg   = useColorModeValue("green.50",  "green.900");
+    const incomeText = useColorModeValue("green.700", "green.300");
+
+    const irrBg      = useColorModeValue("orange.50", "orange.900");
+    const irrText    = useColorModeValue("orange.700","orange.300");
+
     const cellHoverBg = useColorModeValue("blue.50",  "blue.700");
 
-    /* ────────────────────────── render ────────────────────────────── */
+    /* ────────────────────────── render ─────────────────────── */
     return (
-      <Box w="full" h="full" overflow="auto">
-        {/* toolbar */}
-        <HStack mb={2} gap={2} flexWrap="wrap">
+      <Box w="full" h="full" display="flex" flexDirection="column">
+        {/* Fixed toolbar (never scrolls) */}
+        <HStack
+          gap={2}
+          px={2}
+          py={1}
+          bg={headerBg}
+          h={`${TOOLBAR_H}px`}
+          flexWrap="nowrap"
+          position="sticky"
+          top={0}
+          zIndex={3}
+        >
           <IconButton
             aria-label="Prev year"
             icon={<ChevronLeftIcon />}
@@ -347,10 +360,13 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
               });
             }}
           />
-          <Button size="sm" onClick={() => addRow(false)}>
+          <Button size="sm" onClick={() => addRow(false, false)}>
             Add expense row
           </Button>
-          <Button size="sm" onClick={() => addRow(true)}>
+          <Button size="sm" onClick={() => addRow(false, true)}>
+            Add special row
+          </Button>
+          <Button size="sm" onClick={() => addRow(true, false)}>
             Add income row
           </Button>
           <Button size="sm" onClick={() => setShowChart((s) => !s)}>
@@ -358,13 +374,15 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
           </Button>
         </HStack>
 
+        {/* Chart (optional) */}
         {showChart && (
-          <Box mb={4} h="140px">
+          <Box h="140px" mb={4}>
             <LeftoverChart data={monthlyLeft} />
           </Box>
         )}
 
-        <Box overflowX="auto">
+        {/* Scrolling table area */}
+        <Box flex="1 1 0" overflow="auto">
           <DragDropContext onDragEnd={onDragEnd}>
             <Table
               size="sm"
@@ -378,15 +396,15 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
                 "th:last-child, td:last-child": { borderRight: "none" },
                 thead: {
                   position: "sticky",
-                  top: 0,
-                  zIndex: 1,
+                  top: 0,             /* now relative to the scroll box */
+                  zIndex: 2,
                   bg: headerBg,
                 },
               }}
             >
               <Thead>
                 <Tr>
-                  <Th w="24px" /> {/* drag-handle column */}
+                  <Th w="24px" />
                   <Th>Description</Th>
                   {months.map((m) => (
                     <Th key={m}>
@@ -397,7 +415,6 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
                 </Tr>
               </Thead>
 
-              {/* Droppable container = Tbody */}
               <Droppable droppableId="finance-rows" type="ROW">
                 {(dropProvided) => (
                   <Tbody
@@ -405,12 +422,21 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
                     {...dropProvided.droppableProps}
                   >
                     {rows.map((row, index) => {
-                      const rowBg = row.income
-                        ? incomeBg
-                        : index % 2
-                        ? zebraOdd
-                        : "transparent";
-                      const textColor = row.income ? incomeText : undefined;
+                      const rowBg =
+                        row.income
+                          ? incomeBg
+                          : row.irregular
+                          ? irrBg
+                          : index % 2
+                          ? zebraOdd
+                          : "transparent";
+
+                      const textColor =
+                        row.income
+                          ? incomeText
+                          : row.irregular
+                          ? irrText
+                          : undefined;
 
                       return (
                         <Draggable
@@ -425,9 +451,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
                               opacity={dragState.isDragging ? 0.6 : 1}
                               bg={rowBg}
                               color={textColor}
-                              _hover={{
-                                bg: row.income ? incomeBg : rowHoverBg,
-                              }}
+                              _hover={{ bg: rowBg }}
                             >
                               {/* handle */}
                               <Td
@@ -452,12 +476,28 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
                                     aria-label={
                                       row.income
                                         ? "Income row"
+                                        : row.irregular
+                                        ? "Special row"
                                         : "Expense row"
                                     }
-                                    icon={<FiDollarSign />}
+                                    icon={
+                                      row.income ? (
+                                        <FiDollarSign />
+                                      ) : row.irregular ? (
+                                        <StarIcon />
+                                      ) : (
+                                        <FiDollarSign />
+                                      )
+                                    }
                                     size="xs"
                                     variant="ghost"
-                                    colorScheme={row.income ? "green" : "gray"}
+                                    colorScheme={
+                                      row.income
+                                        ? "green"
+                                        : row.irregular
+                                        ? "orange"
+                                        : "gray"
+                                    }
                                     title="Toggle income / expense"
                                     onClick={() => toggleIncome(row.idx)}
                                   />
@@ -480,6 +520,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
                                   key={cIdx}
                                   textAlign="right"
                                   cursor="pointer"
+                                  _hover={{ bg: cellHoverBg }}
                                   onClick={() =>
                                     setEdit({
                                       rowIdx: row.idx,
@@ -487,13 +528,11 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
                                       val: v,
                                     })
                                   }
-                                  _hover={{ bg: cellHoverBg }}
                                 >
                                   {v.toFixed(2)}
                                 </Td>
                               ))}
 
-                              {/* delete btn */}
                               <Td textAlign="center">
                                 {row.idx !== 0 && (
                                   <IconButton
@@ -536,7 +575,7 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
           </DragDropContext>
         </Box>
 
-        {/* cell-edit modal */}
+        {/* ───────── Modals ───────── */}
         {edit && (
           <CellEditModal
             isOpen={!!edit}
@@ -558,7 +597,6 @@ const FinanceTable = forwardRef<FinanceTableHandle, FinanceTableProps>(
           />
         )}
 
-        {/* income-settings modal */}
         <IncomeSettingsModal
           isOpen={incomeDlg.isOpen}
           onClose={incomeDlg.onClose}

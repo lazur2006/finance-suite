@@ -23,17 +23,19 @@ export interface FinanceTableProps {
 export interface Row {
   description: string;
   values: number[];
-  idx: number;       // immutable backend id
-  income: boolean;   // income = green, else expense
-  position: number;  // display order
+  idx: number;          // immutable backend id
+  income: boolean;      // income = green
+  irregular: boolean;   // NEW – special one-off expenses = orange
+  position: number;     // display order
 }
 
 /**
- * Extend backend RowMeta with optional `income` flag.
- * (Older DB rows don’t contain this yet.)
+ * Extend backend RowMeta with optional flags.
+ * (Older DB rows don’t contain these yet.)
  */
 export interface RowMeta extends ApiRowMeta {
   income?: boolean;
+  irregular?: boolean;
 }
 
 /* Drag-and-drop helper */
